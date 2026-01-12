@@ -10,16 +10,11 @@ DATA_PATH = os.path.join('data')
 # Твій фінальний набір жестів
 gestures = np.array([
     'swipe_right', 
-    'swipe_left', 
-    'swipe_up', 
-    'swipe_down', 
-    'volume_pinch', # Для регулювання гучності
-    'fist',         # Для блокування/паузи
-    'static'        # Спокійний стан (обов'язково!)
+    #'static'       
 ])
 
-no_sequences = 30    # Кількість відеозаписів на кожен жест
-sequence_length = 30 # Кількість кадрів у кожному відео (приблизно 1 сек)
+no_sequences = 60
+sequence_length = 30 
 
 # --- ІНІЦІАЛІЗАЦІЯ MEDIAPIPE ---
 mp_hands = mp.solutions.hands
