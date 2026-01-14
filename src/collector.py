@@ -9,8 +9,9 @@ from utils import extract_keypoints
 DATA_PATH = os.path.join('data') 
 # Твій фінальний набір жестів
 gestures = np.array([
-    'swipe_right', 
-    #'static'       
+    'static',  
+    #'swipe_left', 
+    #'swipe_right',     
 ])
 
 no_sequences = 60
@@ -54,7 +55,7 @@ def collect_data():
                         cv2.putText(frame, f'Video № {sequence}', (15, 60),
                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
                         cv2.imshow('Data Collector', frame)
-                        cv2.waitKey(1500) # Пауза 1.5 сек перед записом
+                        cv2.waitKey(1500) 
                     else:
                         cv2.putText(frame, f'RECORDING: {gesture}', (15, 30),
                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2, cv2.LINE_AA)
@@ -63,7 +64,6 @@ def collect_data():
                     # Вилучення координат через нашу функцію (126 значень)
                     keypoints = extract_keypoints(results)
                     
-                    # Шлях для збереження: data/назва_жесту/номер_відео/номер_кадру.npy
                     target_dir = os.path.join(DATA_PATH, gesture, str(sequence))
                     if not os.path.exists(target_dir):
                         os.makedirs(target_dir)

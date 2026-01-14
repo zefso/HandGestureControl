@@ -12,8 +12,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from src.model import GestureLSTM
 from src.utils import extract_keypoints, calculate_volume_level
 
-# --- НАЛАШТУВАННЯ ---
-gestures = ['static', 'swipe_right']
+# --- НАЛАШТУВАННЯ ---'swipe_right',
+gestures = ['static', 'swipe_left', 'swipe_right']
 sequence_length = 30
 threshold = 0.95  # Високий поріг для стабільності
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -39,8 +39,6 @@ def test_interface():
     predictions = []
     cooldown = 0  
     last_vol = -1
-
-    print("Система готова! Використовуй 'swipe_right' для музики або 'pinch' для гучності.")
 
     while cap.isOpened():
         ret, frame = cap.read()
@@ -70,10 +68,15 @@ def test_interface():
                     if len(predictions) >= 5 and all(p == action_idx.item() for p in predictions[-5:]):
                         detected_gesture = gestures[action_idx]
 
-                        if detected_gesture == 'swipe_right' and cooldown == 0:
-                            pyautogui.press('nexttrack')
+                        if detected_gesture == 'swipe_left' and cooldown == 0:
+                            pyautogui.press('prevtrack')
                             print(f">>> ЖЕСТ: {detected_gesture.upper()} (Впевненість: {max_prob.item():.2f})")
                             cooldown = 30 #
+
+                        if detected_gesture == 'swipe_right' and cooldown == 0: 
+                            pyautogui.press('nexttrack')
+                            print(f">>> ЖЕСТ: {detected_gesture.upper()} (Впевненість: {max_prob.item():.2f})")
+                            cooldown = 30
 
         # 3. Логіка гучності (Математика)
         #if results.multi_hand_landmarks:

@@ -9,7 +9,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from src.model import GestureLSTM
 
 DATA_PATH = 'data'
-gestures = ['static', 'swipe_right']
+gestures = ['static', 'swipe_left', 'swipe_right']
 sequence_length = 30
 
 def train():
@@ -34,7 +34,7 @@ def train():
     X = torch.tensor(np.array(X), dtype=torch.float32)
     y = torch.tensor(np.array(y), dtype=torch.long)
 
-    epochs = 100 
+    epochs = 100
     model = GestureLSTM(num_classes=len(gestures))
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=0.0005) 
