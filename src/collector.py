@@ -9,9 +9,12 @@ from utils import extract_keypoints
 DATA_PATH = os.path.join('data') 
 # Твій фінальний набір жестів
 gestures = np.array([
-    'static',  
+    #'static',  
     #'swipe_left', 
-    #'swipe_right',     
+    #'swipe_right',
+    #'ok',
+    'stop',
+    'browser'     
 ])
 
 no_sequences = 60
@@ -46,7 +49,6 @@ def collect_data():
                             mp_drawing.draw_landmarks(
                                 frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
 
-                    # Логіка пауз перед початком кожного нового запису
                     if frame_num == 0:
                         cv2.putText(frame, 'GET READY!', (200, 200),
                                    cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 255, 0), 3, cv2.LINE_AA)
@@ -61,7 +63,6 @@ def collect_data():
                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2, cv2.LINE_AA)
                         cv2.imshow('Data Collector', frame)
 
-                    # Вилучення координат через нашу функцію (126 значень)
                     keypoints = extract_keypoints(results)
                     
                     target_dir = os.path.join(DATA_PATH, gesture, str(sequence))

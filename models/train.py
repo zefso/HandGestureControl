@@ -9,7 +9,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from src.model import GestureLSTM
 
 DATA_PATH = 'data'
-gestures = ['static', 'swipe_left', 'swipe_right']
+gestures = ['static', 'swipe_left', 'swipe_right', 'ok', 'stop']
 sequence_length = 30
 
 def train():
@@ -34,7 +34,7 @@ def train():
     X = torch.tensor(np.array(X), dtype=torch.float32)
     y = torch.tensor(np.array(y), dtype=torch.long)
 
-    epochs = 100
+    epochs = 180
     model = GestureLSTM(num_classes=len(gestures))
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=0.0005) 
@@ -49,13 +49,11 @@ def train():
         loss = criterion(outputs, y)
         loss.backward()
         optimizer.step()
-        
-        if (epoch+1) % 10 == 0:
-            _, predicted = torch.max(outputs.data, 1)
-            total = y.size(0)
-            correct = (predicted == y).sum().item()
-            accuracy = 100 * correct / total
-            print(f'Epoch [{epoch+1}/{epochs}], Loss: {loss.item():.4f}, Accuracy: {accuracy:.2f}%')
+        _, predicted = torch.max(outputs.data, 1)
+        total = y.size(0)
+        correct = (predicted == y).sum().item()
+        accuracy = 100 * correct / total
+        print(f'Epoch [{epoch+1}/{epochs}], Loss: {loss.item():.4f}, Accuracy: {accuracy:.2f}%')
 
     os.makedirs('models', exist_ok=True)
     torch.save(model.state_dict(), 'models/test_model.pth')

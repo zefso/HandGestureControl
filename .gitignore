@@ -210,4 +210,6 @@ __marimo__/
 *.npy
 
 data/
+data_old/
+
 
