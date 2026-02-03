@@ -13,11 +13,11 @@ gestures = np.array([
     #'swipe_left', 
     #'swipe_right',
     #'ok',
-    'stop',
-    'browser'     
+    #'stop',
+    #'browser'     
 ])
 
-no_sequences = 60
+no_sequences = 50
 sequence_length = 30 
 
 # --- ІНІЦІАЛІЗАЦІЯ MEDIAPIPE ---
