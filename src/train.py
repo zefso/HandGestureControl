@@ -14,16 +14,8 @@ import matplotlib.pyplot as plt
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from src.model import GestureLSTM
 
-# --- КОНФІГУРАЦІЯ ---
-DATA_PATH = 'data'
-MODEL_DIR = 'models'
-DIAGRAM_DIR = 'diagram'
-MODEL_NAME = 'gesture_lstm_best.pth'
-SEQUENCE_LENGTH = 30
-INPUT_SIZE = 126 # 21 точка * 3 координати * 2 руки
-BATCH_SIZE = 32
-LEARNING_RATE = 0.0005
-EPOCHS = 150
+# --- CONFIG ---
+from src.config import GESTURES, DATA_PATH, INPUT_SIZE, MODEL_DIR, DIAGRAM_DIR, MODEL_NAME, BATCH_SIZE, LEARNING_RATE, EPOCHS, SEQ_LENGTH
 
 # Створення папок
 os.makedirs(MODEL_DIR, exist_ok=True)
@@ -40,15 +32,15 @@ class GestureDataset(Dataset):
     def __getitem__(self, idx):
         return self.data[idx], self.labels[idx]
 
-def load_data(gestures):
+def load_data(GESTURES):
     X, y = [], []
-    label_map = {label: idx for idx, label in enumerate(gestures)}
+    label_map = {label: idx for idx, label in enumerate(GESTURES)}
     
-    for gesture in gestures:
+    for gesture in GESTURES:
         print(f"--> Завантаження жесту: {gesture}")
         gesture_path = os.path.join(DATA_PATH, gesture)
         sequences = os.listdir(gesture_path)
-        
+
         for seq in sequences:
             seq_path = os.path.join(gesture_path, seq)
             # Сортування файлів за номером кадру
@@ -57,12 +49,12 @@ def load_data(gestures):
             
             window = []
             # Беремо перші 30 кадрів
-            for frame in frames[:SEQUENCE_LENGTH]: 
+            for frame in frames[:SEQ_LENGTH]: 
                 res = np.load(os.path.join(seq_path, frame))
                 window.append(res)
             
-            # Якщо кадрів менше 30 - заповнюємо нулями (Padding)
-            while len(window) < SEQUENCE_LENGTH:
+            # Якщо кадрів менше 30 
+            while len(window) < SEQ_LENGTH:
                 window.append(np.zeros(INPUT_SIZE))
                 
             X.append(window)
@@ -72,17 +64,16 @@ def load_data(gestures):
 
 def train_model():
     # 1. Підготовка даних
-    gestures = sorted([d for d in os.listdir(DATA_PATH) if os.path.isdir(os.path.join(DATA_PATH, d))])
-    print(f"Список жестів: {gestures}")
+    print(f"Список жестів: {GESTURES}")
     
-    X, y = load_data(gestures)
+    X, y = load_data(GESTURES)
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
     
     train_loader = DataLoader(GestureDataset(X_train, y_train), batch_size=BATCH_SIZE, shuffle=True)
     test_loader = DataLoader(GestureDataset(X_test, y_test), batch_size=BATCH_SIZE, shuffle=False)
     
     # 2. Ініціалізація
-    model = GestureLSTM(num_classes=len(gestures))
+    model = GestureLSTM(num_classes=len(GESTURES))
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
     
@@ -144,7 +135,7 @@ def train_model():
     # Матриця помилок
     cm = confusion_matrix(all_labels, all_preds)
     plt.figure(figsize=(10, 8))
-    sns.heatmap(cm, annot=True, fmt='d', xticklabels=gestures, yticklabels=gestures, cmap='Blues')
+    sns.heatmap(cm, annot=True, fmt='d', xticklabels=GESTURES, yticklabels=GESTURES, cmap='Blues')
     plt.title('Матриця помилок (Confusion Matrix)')
     plt.xlabel('Передбачено')
     plt.ylabel('Справжній жест')

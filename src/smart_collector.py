@@ -9,9 +9,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from src.utils import extract_keypoints
 
 # --- CONFIG ---
-DATA_PATH = os.path.join('data')
-gestures = ['static', 'swipe_right', 'swipe_left', 'ok', 'stop', 'browser']
-sequence_length = 30
+from src.config import GESTURES, SEQ_LENGTH, DATA_PATH, MODEL_PATH, THRESHOLD, DEVICE
+
 no_sequences = 100
 
 # --- SETUP ---
@@ -24,7 +23,7 @@ hands = mp_hands.Hands(
 )
 
 def create_folders():
-    for gesture in gestures:
+    for gesture in GESTURES:
         for sequence in range(no_sequences):
             try:
                 os.makedirs(os.path.join(DATA_PATH, gesture, str(sequence)))
@@ -45,7 +44,7 @@ def collect_data():
     current_sequence = 0
     
     # Find first empty sequence for current gesture
-    while os.path.exists(os.path.join(DATA_PATH, gestures[current_gesture_idx], str(current_sequence), '0.npy')):
+    while os.path.exists(os.path.join(DATA_PATH, GESTURES[current_gesture_idx], str(current_sequence), '0.npy')):
         current_sequence += 1
         
     recording = False
@@ -67,7 +66,7 @@ def collect_data():
         # Info Overlay
         cv2.rectangle(frame, (0,0), (640, 60), (0,0,0), -1)
         
-        gesture_name = gestures[current_gesture_idx]
+        gesture_name = GESTURES[current_gesture_idx]
         cv2.putText(frame, f"TARGET: {gesture_name.upper()} | SEQ: {current_sequence}", (10, 30),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
@@ -78,36 +77,32 @@ def collect_data():
              # Navigation
              key = cv2.waitKey(1) & 0xFF
              if key == ord('n'):
-                 current_gesture_idx = (current_gesture_idx + 1) % len(gestures)
+                 current_gesture_idx = (current_gesture_idx + 1) % len(GESTURES)
                  current_sequence = 0
-                 # Find next empty
-                 while os.path.exists(os.path.join(DATA_PATH, gestures[current_gesture_idx], str(current_sequence), '0.npy')):
+                 while os.path.exists(os.path.join(DATA_PATH, GESTURES[current_gesture_idx], str(current_sequence), '0.npy')):
                     current_sequence += 1
              elif key == ord('q'):
                  break
-             elif key == 32: # SPACE
+             elif key == 32: 
                  recording = True
                  frame_count = 0
                  
         if recording:
             if not results.multi_hand_landmarks:
-                # Якщо рука зникла - скидаємо запис цієї послідовності
-                # Це гарантує, що 30 кадрів будуть йти один за одним без "дирок"
                 frame_count = 0
                 cv2.putText(frame, "HAND LOST! RESETTING SEQUENCE...", (10, 55),
                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
             else:
                 keypoints = extract_keypoints(results)
-                # Перевірка чи ми не вилізли за межі створених папок
                 save_path = os.path.join(DATA_PATH, gesture_name, str(current_sequence))
                 if not os.path.exists(save_path): os.makedirs(save_path)
                 
                 np.save(os.path.join(save_path, f"{frame_count}.npy"), keypoints)
                 frame_count += 1
-                cv2.putText(frame, f"RECORDING: {frame_count}/{sequence_length}", (10, 55),
+                cv2.putText(frame, f"RECORDING: {frame_count}/{SEQ_LENGTH}", (10, 55),
                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
                 
-                if frame_count == sequence_length:
+                if frame_count == SEQ_LENGTH:
                     recording = False
                     current_sequence += 1
                     print(f"Recorded sequence {current_sequence-1} for {gesture_name}")
