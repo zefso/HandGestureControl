@@ -18,7 +18,7 @@ def calculate_volume_level(hand_landmarks, smoothing=0.15):
     index = hand_landmarks.landmark[8]
     distance = ((thumb.x - index.x)**2 + (thumb.y - index.y)**2)**0.5
     
-    current_vol = np.interp(distance, [0.03, 0.26], [0, 100])
+    current_vol = np.interp(distance, [0.02, 0.20], [0, 100])
     
     if current_vol >= 97: 
         current_vol = 100  

@@ -6,6 +6,10 @@
 
 [Read in Ukrainian UA](README.uk.md)
 
+<p align="center">
+  <img src="media/Hand_Gesture_Control_preview.gif" alt="Hand Gesture Control Preview" width="100%">
+</p>
+
 Welcome to the **Hand Gesture Control System**! 🖱️👋
 This project empowers you to control your computer mouse and execute commands using simple hand gestures. Powered by **Computer Vision** and **Deep Learning**, it offers a touch-free interface experience.
 
