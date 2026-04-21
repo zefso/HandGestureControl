@@ -16,7 +16,7 @@ try:
     from src.config import GESTURES, SEQ_LENGTH, MODEL_PATH, THRESHOLD, DEVICE, SWITCH_FRAMES
     from src.mouse_controller import AirMouse
 except ImportError as e:
-    print(f"Помилка імпорту: {e}. Перевірте структуру папок.")
+    print(f"Error імпорту: {e}. Перевірте структуру папок.")
     sys.exit()
 
 volume = get_volume_interface()
@@ -110,12 +110,10 @@ def draw_interface(frame, mode, last_action, confidence, switching, switch_count
     """Візуалізація UI"""
     h, w, _ = frame.shape
     
-    # Колір теми залежно від режиму
     if mode == "VOLUME": UI_COLOR = (0, 255, 0)     
     elif mode == "MOUSE": UI_COLOR = (255, 0, 255)   
     else: UI_COLOR = (245, 117, 16)                 
 
-    # Верхня панель
     overlay = frame.copy()
     cv2.rectangle(overlay, (0, 0), (w, 60), UI_COLOR, -1)
     cv2.addWeighted(overlay, 0.8, frame, 0.2, 0, frame)
@@ -123,7 +121,6 @@ def draw_interface(frame, mode, last_action, confidence, switching, switch_count
     status_text = f"MODE: {mode} | ACTION: {last_action.upper()}"
     cv2.putText(frame, status_text, (15, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
 
-    # Індикатор перемикання
     if switching:
         bar_width = int((switch_counter / SWITCH_FRAMES) * 150)
         cx, cy = w // 2, h - 50
@@ -131,7 +128,6 @@ def draw_interface(frame, mode, last_action, confidence, switching, switch_count
         cv2.rectangle(frame, (cx - 75, cy), (cx + 75, cy + 10), (255, 255, 255), 2)
         cv2.putText(frame, "HOLD TO SWITCH", (cx - 60, cy - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
 
-    # Індикатор впевненості (тільки для жестів)
     if mode == "GESTURES" and confidence > 0 and not switching:
         bar_len = int(confidence * 150)
         conf_color = (0, 0, 255) if confidence < 0.8 else (0, 255, 0)
@@ -159,7 +155,7 @@ def main():
             if not ret: break
             frame = cv2.flip(frame, 1)
             
-            # 1. Обробка
+            # 1. Обробкаe-shop-glasses.vercel.app
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             results = hands.process(frame_rgb)
             
@@ -167,12 +163,11 @@ def main():
             detected = "static"
             confidence = 0.0
 
-            # 2. Логіка режимів
-            # АУДІО (Пріоритет)
+            # 2. Логіка АУДІО
             if left_fist:
                 fist_frames += 1
                 if fist_frames >= 7:
-                    current_mode_display = "VOLUME" # For display only
+                    current_mode_display = "VOLUME" 
                     if right_hand:
                         try:
                             levels = calculate_volume_level(right_hand)
@@ -185,7 +180,6 @@ def main():
                 fist_frames = 0
                 
                 # РОЗПІЗНАВАННЯ
-                # розпізнаємо завжди для перемикання, або якщо в режимі жестів
                 if results.multi_hand_landmarks:
                     keypoints = extract_keypoints(results)
                     sequence.append(keypoints)
@@ -196,7 +190,9 @@ def main():
                 
                 # ПЕРЕМИКАННЯ
                 current_mode, switch_counter, switching, reset = handle_mode_switching(current_mode, detected, switch_counter, SWITCH_FRAMES)
-                if reset: sequence = []
+                if reset: 
+                    sequence = []
+
 
                 # ДІЇ
                 elif current_mode == "MOUSE":
@@ -239,10 +235,8 @@ def main():
                 
                 if cooldown > 0: cooldown -= 1
                 
-                # ВІЗУАЛІЗАЦІЯ
                 draw_interface(frame, current_mode, last_gesture, confidence, switching, switch_counter, SWITCH_FRAMES)
             
-            # Малюємо скелет рук
             if results.multi_hand_landmarks:
                 for hlms in results.multi_hand_landmarks:
                     mp_drawing.draw_landmarks(frame, hlms, mp_hands.HAND_CONNECTIONS)
