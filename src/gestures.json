@@ -1,0 +1,172 @@
+{
+  "_comment": "Головний конфіг жестів. Редагуй без перекомпіляції.",
+  "gestures": [
+    "static",
+    "swipe_right",
+    "swipe_left",
+    "ok",
+    "stop",
+    "browser",
+    "fist_left"
+  ],
+  "active_profile": "default",
+  "profiles": {
+    "default": {
+      "description": "Загальний профіль",
+      "actions": {
+        "swipe_left": {
+          "type": "hotkey",
+          "keys": [
+            "alt",
+            "tab"
+          ],
+          "description": "Switch window"
+        },
+        "swipe_right": {
+          "type": "hotkey",
+          "keys": [
+            "ctrl",
+            "tab"
+          ],
+          "description": "Next tab"
+        },
+        "browser": {
+          "type": "url",
+          "url": "https://google.com",
+          "description": "Open browser"
+        },
+        "fist_left": {
+          "type": "hotkey",
+          "keys": [
+            "win",
+            "d"
+          ],
+          "description": "Show desktop"
+        }
+      }
+    },
+    "browser": {
+      "description": "Профіль для браузера",
+      "actions": {
+        "swipe_left": {
+          "type": "hotkey",
+          "keys": [
+            "alt",
+            "left"
+          ],
+          "description": "Back"
+        },
+        "swipe_right": {
+          "type": "hotkey",
+          "keys": [
+            "alt",
+            "right"
+          ],
+          "description": "Forward"
+        },
+        "browser": {
+          "type": "hotkey",
+          "keys": [
+            "ctrl",
+            "t"
+          ],
+          "description": "New tab"
+        },
+        "fist_left": {
+          "type": "hotkey",
+          "keys": [
+            "ctrl",
+            "w"
+          ],
+          "description": "Close tab"
+        }
+      }
+    },
+    "media": {
+      "description": "Профіль для медіаплеєра",
+      "actions": {
+        "swipe_left": {
+          "type": "key",
+          "key": "prevtrack",
+          "description": "Previous track"
+        },
+        "swipe_right": {
+          "type": "key",
+          "key": "nexttrack",
+          "description": "Next track"
+        },
+        "browser": {
+          "type": "key",
+          "key": "playpause",
+          "description": "Play / Pause"
+        },
+        "fist_left": {
+          "type": "key",
+          "key": "volumemute",
+          "description": "Mute"
+        }
+      }
+    },
+    "vscode": {
+      "description": "Профіль для VS Code",
+      "actions": {
+        "swipe_left": {
+          "type": "hotkey",
+          "keys": [
+            "ctrl",
+            "shift",
+            "tab"
+          ],
+          "description": "Prev file"
+        },
+        "swipe_right": {
+          "type": "hotkey",
+          "keys": [
+            "ctrl",
+            "tab"
+          ],
+          "description": "Next file"
+        },
+        "browser": {
+          "type": "hotkey",
+          "keys": [
+            "ctrl",
+            "shift",
+            "p"
+          ],
+          "description": "Command palette"
+        },
+        "fist_left": {
+          "type": "hotkey",
+          "keys": [
+            "ctrl",
+            "grave"
+          ],
+          "description": "Toggle terminal"
+        }
+      }
+    }
+  },
+  "model": {
+    "threshold": 0.92,
+    "seq_length": 30,
+    "switch_frames": 7,
+    "cooldown_frames": 40
+  },
+  "mouse": {
+    "smoothing": 0.3,
+    "click_zone_x": [
+      0.25,
+      0.75
+    ],
+    "click_zone_y": [
+      0.25,
+      0.65
+    ]
+  },
+  "volume": {
+    "smoothing": 0.15,
+    "distance_min": 0.02,
+    "distance_max": 0.20
+  }
+}
