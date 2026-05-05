@@ -140,7 +140,7 @@
           "type": "hotkey",
           "keys": [
             "ctrl",
-            "grave"
+            "`"
           ],
           "description": "Toggle terminal"
         }

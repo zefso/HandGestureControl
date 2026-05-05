@@ -95,8 +95,10 @@ class TestVolumeController:
         assert result == self.vc._last_vol
 
     def test_smoothing_applied(self):
+        """At mid-range distance smoothing should produce a value between 0 and 100."""
         self.vc._last_vol = 0
-        hand = make_hand_landmarks({4: (0.3, 0.5), 8: (0.5, 0.5)})
+        # distance ≈0.12 → interp≈0.12/0.18*100≈67% — well inside snap thresholds
+        hand = make_hand_landmarks({4: (0.38, 0.5), 8: (0.5, 0.5)})
         result = self.vc.calculate_level(hand)
         assert 0 < result < 100
 
@@ -115,44 +117,57 @@ class TestExtractKeypoints:
 
     def test_no_hands_returns_zeros(self):
         results = make_results([])
-        kp = extract_keypoints(results)
-        assert kp.shape == (INPUT_SIZE,)
+        kp = extract_keypoints(results, use_delta=False)
+        assert kp.shape == (126,)
         assert np.all(kp == 0)
 
     def test_right_hand_fills_second_half(self):
+        """Права рука заповнює другу половину (індекси 63..125)."""
         landmarks = {i: (float(i) * 0.01, float(i) * 0.01, 0.0) for i in range(21)}
         results = make_results([{'label': 'Right', 'landmarks': landmarks}])
-        kp = extract_keypoints(results)
-        assert kp.shape == (INPUT_SIZE,)
-        assert np.all(kp[:63] == 0)       
-        assert not np.all(kp[63:] == 0)   
+        kp = extract_keypoints(results, use_delta=False)   # 126 елементів
+        assert kp.shape == (126,)
+        assert np.all(kp[:63] == 0)          # ліва рука — нулі
+        assert not np.all(kp[63:126] == 0)   # права рука — заповнена
 
     def test_left_hand_fills_first_half(self):
+        """Ліва рука заповнює першу половину (індекси 0..62)."""
         landmarks = {i: (float(i) * 0.01, float(i) * 0.01, 0.0) for i in range(21)}
         results = make_results([{'label': 'Left', 'landmarks': landmarks}])
-        kp = extract_keypoints(results)
-        assert not np.all(kp[:63] == 0)   
-        assert np.all(kp[63:] == 0)       
+        kp = extract_keypoints(results, use_delta=False)   # 126 елементів
+        assert kp.shape == (126,)
+        assert not np.all(kp[:63] == 0)   # ліва рука — заповнена
+        assert np.all(kp[63:126] == 0)    # права рука — нулі
 
     def test_wrist_normalization(self):
+        """Зап'ясток (landmark 0) нормований до нуля."""
         landmarks = {i: (0.5, 0.5, 0.0) for i in range(21)}
         results = make_results([{'label': 'Right', 'landmarks': landmarks}])
-        kp = extract_keypoints(results)
-        assert np.allclose(kp[63:66], 0)
+        kp = extract_keypoints(results, use_delta=False)
+        assert np.allclose(kp[63:66], 0)   # rh wrist: x=0, y=0, z=0
 
     def test_two_hands_both_filled(self):
+        """Обидві руки — обидва блоки ненульові."""
         lm = {i: (float(i) * 0.01, 0.0, 0.0) for i in range(21)}
         results = make_results([
             {'label': 'Left',  'landmarks': lm},
             {'label': 'Right', 'landmarks': lm},
         ])
-        kp = extract_keypoints(results)
-        assert not np.all(kp[:63] == 0)
-        assert not np.all(kp[63:] == 0)
+        kp = extract_keypoints(results, use_delta=False)
+        assert not np.all(kp[:63] == 0)      # ліва рука
+        assert not np.all(kp[63:126] == 0)   # права рука
+
+    def test_delta_shape_when_enabled(self):
+        """use_delta=True повертає 252 елементи."""
+        from src.utils import reset_delta_state
+        reset_delta_state()
+        results = make_results([])
+        kp = extract_keypoints(results, use_delta=True)
+        assert kp.shape == (252,)
 
     def test_output_dtype_is_float(self):
         results = make_results([])
-        kp = extract_keypoints(results)
+        kp = extract_keypoints(results, use_delta=False)
         assert kp.dtype in [np.float32, np.float64]
 
 
@@ -343,10 +358,47 @@ class TestConfig:
         assert SEQ_LENGTH > 0
 
     def test_input_size_matches_landmarks(self):
-        assert INPUT_SIZE == 21 * 3 * 2
+        from src.config import USE_DELTA
+        expected = 21 * 3 * 2 * (2 if USE_DELTA else 1)
+        assert INPUT_SIZE == expected, (
+            f"INPUT_SIZE={INPUT_SIZE}, USE_DELTA={USE_DELTA}, очікується {expected}"
+        )
 
     def test_threshold_in_valid_range(self):
         assert 0.0 < THRESHOLD < 1.0
 
     def test_no_duplicate_gestures(self):
         assert len(GESTURES) == len(set(GESTURES))
+
+
+# ===========================================================================
+# 7. reset_delta_state
+# ===========================================================================
+
+class TestResetDeltaState:
+
+    def test_reset_clears_state(self):
+        from src.utils import reset_delta_state, extract_keypoints
+        # Перший виклик — встановлює стан
+        results = make_results([{'label': 'Right', 'landmarks': {i: (0.1*i, 0.0, 0.0) for i in range(21)}}])
+        extract_keypoints(results, use_delta=True)
+        # Скидаємо
+        reset_delta_state()
+        # Після скиду delta має бути нулями
+        kp = extract_keypoints(results, use_delta=True)
+        delta = kp[126:]
+        assert np.all(delta == 0), "Після reset_delta_state дельта має бути нулями"
+
+    def test_delta_nonzero_after_two_frames(self):
+        from src.utils import reset_delta_state, extract_keypoints
+        reset_delta_state()
+        # Різні позиції пальців: зап'ясток завжди (0,0), пальці — різні між кадрами
+        lm_frame1 = {i: (i * 0.02, i * 0.02, 0.0) for i in range(21)}
+        lm_frame2 = {i: (i * 0.02 + 0.05, i * 0.02, 0.0) for i in range(21)}
+        r1 = make_results([{'label': 'Right', 'landmarks': lm_frame1}])
+        r2 = make_results([{'label': 'Right', 'landmarks': lm_frame2}])
+        extract_keypoints(r1, use_delta=True)          # встановлює _prev
+        kp2 = extract_keypoints(r2, use_delta=True)   # delta = kp2 - kp1
+        delta = kp2[126:]
+        # Пальці зсунулись на 0.05 в x → дельта x-компоненти ненульові
+        assert not np.all(delta == 0), "Дельта має бути ненульовою між різними кадрами"
