@@ -12,6 +12,7 @@ smart_collector.py — збір навчальних даних з підказ�
 CLI:
   python src/smart_collector.py           — звичайний запуск
   python src/smart_collector.py --clean   — очистити ВСЕ дані і почати знову
+  python src/smart_collector.py --target static --count 200 — зібрати 200 прикладів для одного жесту
 """
 
 import cv2
@@ -28,11 +29,10 @@ from src.utils import extract_keypoints, reset_delta_state
 from src.config import GESTURES, SEQ_LENGTH, DATA_PATH, USE_DELTA, INPUT_SIZE
 
 # ---------------------------------------------------------------------------
-# Settings
+# Налаштування
 # ---------------------------------------------------------------------------
 
-NO_SEQUENCES   = 100        # sequences per gesture
-MAX_LOST_RATIO = 0.10       # max % of lost frames
+MAX_LOST_RATIO = 0.10       # максимум 10% кадрів без руки
 
 # Gestures where ONE hand (right) is expected. Two hands - warning.
 SINGLE_HAND_GESTURES = {'swipe_left', 'swipe_right', 'ok', 'stop', 'browser'}
@@ -101,16 +101,16 @@ def check_dataset_consistency() -> bool:
 # ---------------------------------------------------------------------------
 
 def clean_dataset() -> None:
-    """Removes the entire data/ folder and creates an empty structure."""
+    """Видаляє всю папку data/ і створює порожню структуру."""
     if os.path.exists(DATA_PATH):
         shutil.rmtree(DATA_PATH)
-        print(f"[Collector] Dataset cleaned: {DATA_PATH}")
-    create_folders()
+        print(f"[Collector] Датасет очищено: {DATA_PATH}")
 
 
-def create_folders() -> None:
-    for gesture in GESTURES:
-        for seq in range(NO_SEQUENCES):
+def create_folders(target_gesture: str | None, count: int) -> None:
+    gestures_to_create = [target_gesture] if target_gesture else GESTURES
+    for gesture in gestures_to_create:
+        for seq in range(count):
             os.makedirs(os.path.join(DATA_PATH, gesture, str(seq)), exist_ok=True)
 
 
@@ -118,47 +118,47 @@ def create_folders() -> None:
 # Helpers
 # ---------------------------------------------------------------------------
 
-def first_empty_sequence(gesture: str) -> int:
-    for i in range(NO_SEQUENCES):
+def first_empty_sequence(gesture: str, max_count: int) -> int:
+    for i in range(max_count):
         if not os.path.exists(os.path.join(DATA_PATH, gesture, str(i), '0.npy')):
             return i
-    return NO_SEQUENCES
+    return max_count
 
 
-def count_recorded(gesture: str) -> int:
+def count_recorded(gesture: str, max_count: int) -> int:
     count = 0
-    for i in range(NO_SEQUENCES):
+    for i in range(max_count):
         if os.path.exists(os.path.join(DATA_PATH, gesture, str(i), '0.npy')):
             count += 1
     return count
 
 
-def delete_last_sequence(gesture: str) -> bool:
-    for i in range(NO_SEQUENCES - 1, -1, -1):
+def delete_last_sequence(gesture: str, max_count: int) -> bool:
+    for i in range(max_count - 1, -1, -1):
         path = os.path.join(DATA_PATH, gesture, str(i))
         if os.path.exists(os.path.join(path, '0.npy')):
             shutil.rmtree(path)
             os.makedirs(path, exist_ok=True)
-            print(f"[Collector] Deleted sequence {i} for '{gesture}'")
+            print(f"[Collector] Видалено sequence {i} для '{gesture}'")
             return True
     return False
 
 
 # ---------------------------------------------------------------------------
-# UI functions
+# UI функції
 # ---------------------------------------------------------------------------
 
-def draw_top_bar(frame, gesture: str, seq_idx: int, recorded: int) -> None:
+def draw_top_bar(frame, gesture: str, seq_idx: int, recorded: int, max_count: int) -> None:
     h, w, _ = frame.shape
     cv2.rectangle(frame, (0, 0), (w, 65), CLR_BG, -1)
     cv2.putText(frame, f"GESTURE: {gesture.upper()}", (12, 28),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.85, CLR_WHITE, 2)
-    pct = recorded / NO_SEQUENCES
+    pct = recorded / max_count if max_count > 0 else 0
     bar_x, bar_y, bar_w, bar_h = 12, 40, w - 24, 14
     cv2.rectangle(frame, (bar_x, bar_y), (bar_x + bar_w, bar_y + bar_h), (60, 60, 60), -1)
     cv2.rectangle(frame, (bar_x, bar_y),
                   (bar_x + int(bar_w * pct), bar_y + bar_h), CLR_OK, -1)
-    cv2.putText(frame, f"{recorded}/{NO_SEQUENCES}",
+    cv2.putText(frame, f"{recorded}/{max_count}",
                 (bar_x + bar_w + 6, bar_y + 11), cv2.FONT_HERSHEY_SIMPLEX, 0.45, CLR_WHITE, 1)
 
 
@@ -205,10 +205,10 @@ def _show_rejection_screen(cap, message: str) -> None:
 # Record one sequence
 # ---------------------------------------------------------------------------
 
-def record_sequence(cap, hands, gesture: str, seq_idx: int) -> bool:
+def record_sequence(cap, hands, gesture: str, seq_idx: int, max_count: int) -> bool:
     """
-    Records SEQ_LENGTH frames.
-    Returns True if sequence is high quality (lost < MAX_LOST_RATIO).
+    Записує SEQ_LENGTH кадрів.
+    Повертає True якщо sequence якісна (lost < MAX_LOST_RATIO).
     """
     reset_delta_state()
 
@@ -217,7 +217,7 @@ def record_sequence(cap, hands, gesture: str, seq_idx: int) -> bool:
     hint = VARIABILITY_HINTS[seq_idx % len(VARIABILITY_HINTS)]
     is_single_hand = gesture in SINGLE_HAND_GESTURES
 
-    # --- Smooth countdown 3..1 ---
+    # --- Плавний зворотній відлік 3..1 ---
     for countdown in range(3, 0, -1):
         deadline = time.time() + 0.7
         while time.time() < deadline:
@@ -226,7 +226,7 @@ def record_sequence(cap, hands, gesture: str, seq_idx: int) -> bool:
                 return False
             frame = cv2.flip(frame, 1)
             h, w, _ = frame.shape
-            draw_top_bar(frame, gesture, seq_idx, count_recorded(gesture))
+            draw_top_bar(frame, gesture, seq_idx, count_recorded(gesture, max_count), max_count)
             cv2.putText(frame, str(countdown), (w // 2 - 25, h // 2 + 20),
                         cv2.FONT_HERSHEY_SIMPLEX, 3.5, CLR_YELLOW, 6)
             cv2.imshow('Smart Collector', frame)
@@ -262,7 +262,7 @@ def record_sequence(cap, hands, gesture: str, seq_idx: int) -> bool:
         frame_count += 1
 
         # UI
-        draw_top_bar(frame, gesture, seq_idx, count_recorded(gesture))
+        draw_top_bar(frame, gesture, seq_idx, count_recorded(gesture, max_count), max_count)
         draw_hint(frame, hint, seq_idx)
 
         progress = frame_count / SEQ_LENGTH
@@ -301,26 +301,29 @@ def record_sequence(cap, hands, gesture: str, seq_idx: int) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Main loop
+# Головний цикл
 # ---------------------------------------------------------------------------
 
-def collect_data() -> None:
-    create_folders()
+def collect_data(target_gesture: str | None, max_count: int) -> None:
+    create_folders(target_gesture, max_count)
 
     if not check_dataset_consistency():
-        ans = input("Continue anyway? (y/n): ").strip().lower()
+        ans = input("Продовжити все одно? (y/n): ").strip().lower()
         if ans != 'y':
             return
 
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
-        print("[Collector] Error: camera not found.")
+        print("[Collector] Помилка: камера не знайдена.")
         return
+
+    gestures_list = [target_gesture] if target_gesture else GESTURES
 
     print("=" * 55)
     print("  SMART DATA COLLECTOR")
     print(f"  USE_DELTA = {USE_DELTA} | INPUT_SIZE = {INPUT_SIZE}")
-    print(f"  Gestures: {GESTURES}")
+    print(f"  Кількість sequences на жест: {max_count}")
+    print(f"  Жести: {gestures_list}")
     print("=" * 55)
     print("  SPACE — record sequence")
     print("  N     — next gesture")
@@ -343,25 +346,25 @@ def collect_data() -> None:
             frame = cv2.flip(frame, 1)
             results = hands.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
 
-            gesture  = GESTURES[gesture_idx]
-            recorded = count_recorded(gesture)
-            seq_idx  = first_empty_sequence(gesture)
+            gesture  = gestures_list[gesture_idx]
+            recorded = count_recorded(gesture, max_count)
+            seq_idx  = first_empty_sequence(gesture, max_count)
 
-            # Warning for two hands in idle mode
+            # Попередження про дві руки в режимі очікування
             if (results.multi_hand_landmarks
                     and len(results.multi_hand_landmarks) > 1
                     and gesture in SINGLE_HAND_GESTURES):
                 draw_two_hands_warning(frame)
 
-            # Skeleton
+            # Скелет
             if results.multi_hand_landmarks:
                 for hlms in results.multi_hand_landmarks:
                     mp_drawing.draw_landmarks(frame, hlms, mp_hands.HAND_CONNECTIONS)
 
-            draw_top_bar(frame, gesture, seq_idx, recorded)
+            draw_top_bar(frame, gesture, seq_idx, recorded, max_count)
 
             h, w, _ = frame.shape
-            if seq_idx < NO_SEQUENCES:
+            if seq_idx < max_count:
                 hint = VARIABILITY_HINTS[seq_idx % len(VARIABILITY_HINTS)]
                 draw_hint(frame, hint, seq_idx)
                 cv2.putText(frame, "Press SPACE to record", (10, 95),
@@ -378,41 +381,42 @@ def collect_data() -> None:
             if key == ord('q'):
                 break
             elif key == ord('n'):
-                gesture_idx = (gesture_idx + 1) % len(GESTURES)
+                gesture_idx = (gesture_idx + 1) % len(gestures_list)
                 reset_delta_state()
-                print(f"[Collector] → '{GESTURES[gesture_idx]}'")
+                print(f"[Collector] → '{gestures_list[gesture_idx]}'")
             elif key == ord('p'):
-                gesture_idx = (gesture_idx - 1) % len(GESTURES)
+                gesture_idx = (gesture_idx - 1) % len(gestures_list)
                 reset_delta_state()
-                print(f"[Collector] → '{GESTURES[gesture_idx]}'")
+                print(f"[Collector] → '{gestures_list[gesture_idx]}'")
             elif key == ord('d'):
-                if not delete_last_sequence(gesture):
-                    print("[Collector] Nothing to delete.")
+                if not delete_last_sequence(gesture, max_count):
+                    print("[Collector] Нема що видаляти.")
             elif key == 32:  # SPACE
-                if seq_idx >= NO_SEQUENCES:
-                    print(f"[Collector] '{gesture}' already has {NO_SEQUENCES} sequences.")
+                if seq_idx >= max_count:
+                    print(f"[Collector] '{gesture}' вже має {max_count} sequences.")
                     continue
-                success = record_sequence(cap, hands, gesture, seq_idx)
+                success = record_sequence(cap, hands, gesture, seq_idx, max_count)
                 if not success:
-                    print("[Collector] Sequence rejected, try again.")
+                    print("[Collector] Sequence відкинута, спробуй ще раз.")
                 reset_delta_state()
 
     cap.release()
     cv2.destroyAllWindows()
-    print("\n[Collector] Collection finished!")
-    _print_summary()
+    print("\n[Collector] Збір завершено!")
+    _print_summary(gestures_list, max_count)
 
 
-def _print_summary() -> None:
-    print("\n--- SUMMARY ---")
+def _print_summary(gestures_list: list, max_count: int) -> None:
+    print("\n--- ПІДСУМОК ---")
     total = 0
-    for gesture in GESTURES:
-        recorded = count_recorded(gesture)
+    for gesture in gestures_list:
+        recorded = count_recorded(gesture, max_count)
         total   += recorded
-        bar   = "█" * recorded + "░" * (NO_SEQUENCES - recorded)
-        status = "✓" if recorded >= NO_SEQUENCES else f"⚠ {recorded}/{NO_SEQUENCES}"
-        print(f"  {gesture:<15} {status}  [{bar[:20]}]")
-    print(f"\n  Total sequences: {total} / {len(GESTURES) * NO_SEQUENCES}")
+        bar   = "█" * int((recorded / max_count) * 20) if max_count > 0 else ""
+        bar  += "░" * (20 - len(bar))
+        status = "✓" if recorded >= max_count else f"⚠ {recorded}/{max_count}"
+        print(f"  {gesture:<15} {status}  [{bar}]")
+    print(f"\n  Всього sequences: {total} / {len(gestures_list) * max_count}")
 
 
 # ---------------------------------------------------------------------------
@@ -422,16 +426,26 @@ def _print_summary() -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Smart Data Collector")
     parser.add_argument('--clean', action='store_true',
-                        help='Delete entire dataset and start over')
+                        help='Очистити весь датасет і почати знову')
+    parser.add_argument('--target', type=str, default=None,
+                        help='Назва конкретного жесту для збору (наприклад, static або swipe_right)')
+    parser.add_argument('--count', type=int, default=100,
+                        help='Скільки прикладів зібрати (за замовчуванням 100)')
     args = parser.parse_args()
 
+    if args.target and args.target not in GESTURES:
+        print(f"[Collector] Помилка: жест '{args.target}' не знайдений в config.py.")
+        print(f"Доступні жести: {GESTURES}")
+        sys.exit(1)
+
     if args.clean:
-        confirm = input(f"Delete entire dataset in '{DATA_PATH}'? (yes/no): ").strip()
+        confirm = input(f"Видалити весь датасет в '{DATA_PATH}'? (yes/no): ").strip()
         if confirm == 'yes':
             clean_dataset()
-            print("[Collector] Dataset cleaned. Starting collection.")
+            print("[Collector] Датасет очищено. Починаємо збір.")
+            create_folders(args.target, args.count)
         else:
-            print("[Collector] Cancelled.")
+            print("[Collector] Скасовано.")
             sys.exit(0)
 
-    collect_data()
+    collect_data(args.target, args.count)

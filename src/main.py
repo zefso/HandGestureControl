@@ -26,6 +26,13 @@ except ImportError as e:
 pyautogui.PAUSE = 0
 pyautogui.FAILSAFE = False
 
+# ─────────────────────────────────────────────────────────────
+# DRY_RUN = True  →  всі дії ТІЛЬКИ пишуться в консоль,
+#                    нічого реального не виконується.
+# Перемикається клавішею D під час роботи.
+# ─────────────────────────────────────────────────────────────
+DRY_RUN = True
+
 
 def init_system():
     """Ініціалізація всіх компонентів системи."""
@@ -109,7 +116,7 @@ def handle_mode_switching(current_mode, detected, switch_counter):
 
 
 def draw_interface(frame, mode, last_action, confidence,
-                   switching, switch_counter, active_profile):
+                   switching, switch_counter, active_profile, dry_run=False):
     h, w, _ = frame.shape
     color_map = {"VOLUME": (0, 200, 100), "MOUSE": (200, 0, 200)}
     ui_color  = color_map.get(mode, (200, 100, 20))
@@ -141,8 +148,15 @@ def draw_interface(frame, mode, last_action, confidence,
         cv2.putText(frame, f"{int(confidence*100)}%", (w - 210, h - 15),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
+    # DRY_RUN банер
+    if dry_run:
+        cv2.rectangle(frame, (0, h - 22), (220, h), (0, 0, 0), -1)
+        cv2.putText(frame, "[D] DRY RUN — no actions", (5, h - 6),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 200, 255), 1)
+
 
 def main():
+    global DRY_RUN
     cap, mouse, volume_ctrl, executor, model = init_system()
     mp_hands   = mp.solutions.hands
     mp_drawing = mp.solutions.drawing_utils
@@ -153,6 +167,9 @@ def main():
     cooldown       = 0
     fist_frames    = 0
     switch_counter = 0
+
+    if DRY_RUN:
+        print("\n[DRY RUN] Режим спостереження — жодних реальних дій. Натисни D щоб вимкнути.\n")
 
     with mp_hands.Hands(max_num_hands=2,
                         min_detection_confidence=0.7,
@@ -167,6 +184,10 @@ def main():
             key = cv2.waitKey(1) & 0xFF
             if key == ord('q'):
                 break
+            elif key == ord('d'):
+                DRY_RUN = not DRY_RUN
+                status = "УВІМКНЕНО" if DRY_RUN else "ВИМКНЕНО"
+                print(f"[DRY RUN] {status}")
             elif key == ord('p'):
                 executor.next_profile()
             elif key == ord('1'):
@@ -189,10 +210,15 @@ def main():
             if left_fist:
                 fist_frames += 1
                 if fist_frames >= 7 and right_hand:
-                    level = volume_ctrl.apply(right_hand)
+                    # Рахуємо рівень завжди (щоб бачити в UI)
+                    level = volume_ctrl.calculate_level(right_hand)
+                    if DRY_RUN:
+                        print(f"[DRY RUN] VOLUME → {level}%")
+                    else:
+                        volume_ctrl.apply(right_hand)
                     last_gesture = f"VOL {level}%"
                     draw_interface(frame, "VOLUME", last_gesture, 0, False, 0,
-                                   executor.active_profile)
+                                   executor.active_profile, DRY_RUN)
                     if results.multi_hand_landmarks:
                         for hlms in results.multi_hand_landmarks:
                             mp_drawing.draw_landmarks(frame, hlms, mp_hands.HAND_CONNECTIONS)
@@ -221,8 +247,13 @@ def main():
             # Режим Миші
             elif current_mode == "MOUSE":
                 if right_hand:
-                    mouse.move(right_hand)
-                    state = mouse.handle_actions(right_hand)
+                    state = mouse.handle_actions(right_hand)  # розраховуємо завжди
+                    if DRY_RUN:
+                        if state != "IDLE":
+                            print(f"[DRY RUN] MOUSE → {state}")
+                    else:
+                        mouse.move(right_hand)
+                        # handle_actions вже викликаний вище, повторно не треба
                     h_px, w_px, _ = frame.shape
                     cx = int(right_hand.landmark[8].x * w_px)
                     cy = int(right_hand.landmark[8].y * h_px)
@@ -239,16 +270,24 @@ def main():
             # Режим Жестів
             elif current_mode == "GESTURES" and not switching:
                 if detected not in ["static", "ok", "stop"] and cooldown == 0:
-                    description  = executor.execute(detected)
-                    last_gesture = description
-                    cooldown     = COOLDOWN_FRAMES
+                    if DRY_RUN:
+                        # Беремо опис дії з конфігу, але не виконуємо
+                        actions = executor._profiles.get(executor.active_profile, {}).get("actions", {})
+                        action_cfg = actions.get(detected, {})
+                        desc = action_cfg.get("description", detected)
+                        print(f"[DRY RUN] GESTURE → {detected}  ({desc})")
+                        last_gesture = f"{detected}: {desc}"
+                    else:
+                        description  = executor.execute(detected)
+                        last_gesture = description
+                    cooldown = COOLDOWN_FRAMES
 
             if cooldown > 0:
                 cooldown -= 1
 
             # Малювання UI і скелету
             draw_interface(frame, current_mode, last_gesture, confidence,
-                           switching, switch_counter, executor.active_profile)
+                           switching, switch_counter, executor.active_profile, DRY_RUN)
             if results.multi_hand_landmarks:
                 for hlms in results.multi_hand_landmarks:
                     mp_drawing.draw_landmarks(frame, hlms, mp_hands.HAND_CONNECTIONS)

@@ -36,28 +36,6 @@ from src.config import (
 # Аугментація
 # ---------------------------------------------------------------------------
 
-# Жести де flip по X дає сенс (не симетричні)
-FLIP_AUGMENT_GESTURES = {'swipe_left', 'swipe_right'}
-
-
-def augment_flip_x(window: np.ndarray) -> np.ndarray:
-    """
-    Горизонтальний flip: x → -x для кожної ключової точки.
-    window shape: (SEQ_LENGTH, INPUT_SIZE)
-
-    Перші 126 елементів — координати (кожні 3: x, y, z).
-    Якщо USE_DELTA=True, наступні 126 — дельта (теж flipаємо).
-    """
-    flipped = window.copy()
-    # Перевертаємо x-компоненти (індекси 0, 3, 6, ... в кожному кадрі)
-    for start in [0, 63]:      # lh і rh блоки
-        flipped[:, start::3] = -flipped[:, start::3]
-    if USE_DELTA:
-        for start in [126, 189]:   # delta_lh і delta_rh
-            flipped[:, start::3] = -flipped[:, start::3]
-    return flipped
-
-
 def augment_noise(window: np.ndarray, scale: float = 0.002) -> np.ndarray:
     """Додає невеликий гаусовий шум — підвищує стійкість до тремтіння."""
     return window + np.random.normal(0, scale, window.shape).astype(window.dtype)
@@ -84,15 +62,6 @@ class GestureDataset(Dataset):
         label  = self.labels[idx]
 
         if self.augment:
-            gesture_name = self.gesture_names[label]
-            # Flip для свайпів (зі зміною мітки!)
-            if gesture_name in FLIP_AUGMENT_GESTURES and np.random.rand() < 0.5:
-                window = augment_flip_x(window)
-                # swipe_left ↔ swipe_right
-                if gesture_name == 'swipe_left' and 'swipe_right' in self.gesture_names:
-                    label = self.gesture_names.index('swipe_right')
-                elif gesture_name == 'swipe_right' and 'swipe_left' in self.gesture_names:
-                    label = self.gesture_names.index('swipe_left')
             # Невеликий шум для всіх жестів
             if np.random.rand() < 0.5:
                 window = augment_noise(window)
