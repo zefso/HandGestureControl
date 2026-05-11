@@ -1,19 +1,19 @@
 # ── Core vision & AI ─────────────────────────────────────────────
-opencv-python
-mediapipe
-torch
-torchvision
-numpy
+opencv-python==4.12.0.88
+mediapipe==0.10.11
+torch==2.9.1
+torchvision==0.24.1
+numpy==2.2.6
 
 # ── System control (mouse, keyboard, audio) ───────────────────────
-pyautogui
-comtypes
-pycaw
+PyAutoGUI==0.9.54
+comtypes==1.4.15
+pycaw==20251023
 
 # ── ML training & visualization ───────────────────────────────────
-scikit-learn
-matplotlib
-seaborn
+scikit-learn==1.8.0
+matplotlib==3.10.8
+seaborn==0.13.2
 
 # ── Testing ───────────────────────────────────────────────────────
-pytest
+pytest==9.0.3

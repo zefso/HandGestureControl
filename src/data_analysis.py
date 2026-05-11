@@ -39,8 +39,8 @@ def analyze_data() -> None:
             continue
 
         sequences = sorted(
-            [s for s in os.listdir(gesture_path) if os.path.isdir(os.path.join(gesture_path, s))],
-            key=lambda x: int(x) if x.isdigit() else x
+            [s for s in os.listdir(gesture_path) if os.path.isdir(os.path.join(gesture_path, s)) and s.isdigit()],
+            key=int
         )
         seq_count    = len(sequences)
         lost_frames  = 0

@@ -103,7 +103,11 @@ def load_data() -> tuple[np.ndarray, np.ndarray]:
             print(f"[train] ⚠️  Папка не знайдена: {gesture_path}")
             continue
 
-        sequences = sorted(os.listdir(gesture_path), key=lambda x: int(x) if x.isdigit() else x)
+        # Беремо тільки папки, назви яких є числами, і сортуємо їх як цілі числа
+        sequences = sorted(
+            [s for s in os.listdir(gesture_path) if s.isdigit()],
+            key=int
+        )
         print(f"  → '{gesture}': {len(sequences)} sequences")
 
         for seq in sequences:

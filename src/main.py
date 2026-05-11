@@ -161,11 +161,12 @@ def main():
     mp_hands   = mp.solutions.hands
     mp_drawing = mp.solutions.drawing_utils
 
-    current_mode   = "GESTURES"
-    sequence       = []
-    last_gesture   = "READY"
-    cooldown       = 0
-    fist_frames    = 0
+    current_mode    = "GESTURES"
+    sequence        = []
+    last_gesture    = "READY"
+    cooldown        = 0
+    fist_frames     = 0
+    hand_was_present = False   # Трекінг: чи була рука в попередньому кадрі
     switch_counter = 0
 
     if DRY_RUN:
@@ -228,7 +229,18 @@ def main():
                 fist_frames = 0
 
             # Збір ключових точок
-            if results.multi_hand_landmarks:
+            hand_present = bool(results.multi_hand_landmarks)
+
+            if hand_present and not hand_was_present:
+                # Рука щойно з'явилася — скидаємо буфер і дельту,
+                # щоб різкий стрибок з нулів не виглядав як свайп
+                sequence = []
+                reset_delta_state()
+                cooldown = max(cooldown, 1)  # коротка пауза (5 кадрів ≈ 0.17 сек)
+
+            hand_was_present = hand_present
+
+            if hand_present:
                 keypoints = extract_keypoints(results)
                 sequence.append(keypoints)
                 sequence = sequence[-SEQ_LENGTH:]
