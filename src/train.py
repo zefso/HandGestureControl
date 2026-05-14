@@ -1,114 +1,95 @@
-"""
-train.py — навчання GestureLSTM.
-
-Можливості:
-  - Перевірка розміру датасету перед стартом
-  - Аугментація під час тренування (flip по X, шум)
-  - LR Scheduler (ReduceLROnPlateau)
-  - Early Stopping (patience=PATIENCE)
-  - Збереження history у JSON
-  - Матриця помилок + графіки
-"""
-
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 import numpy as np
 import os
 import sys
-import json
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import confusion_matrix, accuracy_score
+from sklearn.utils.class_weight import compute_class_weight
 import seaborn as sns
 import matplotlib.pyplot as plt
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from src.model import GestureLSTM
 from src.config import (
-    GESTURES, DATA_PATH, INPUT_SIZE, USE_DELTA,
-    MODEL_DIR, DIAGRAM_DIR, MODEL_NAME,
-    BATCH_SIZE, LEARNING_RATE, EPOCHS, SEQ_LENGTH, PATIENCE,
-    DEVICE,
+    GESTURES, DATA_PATH, INPUT_SIZE, MODEL_DIR, DIAGRAM_DIR,
+    MODEL_NAME, BATCH_SIZE, LEARNING_RATE, EPOCHS, SEQ_LENGTH, USE_DELTA, PATIENCE
 )
 
-# ---------------------------------------------------------------------------
-# Аугментація
-# ---------------------------------------------------------------------------
-
-def augment_noise(window: np.ndarray, scale: float = 0.002) -> np.ndarray:
-    """Додає невеликий гаусовий шум — підвищує стійкість до тремтіння."""
-    return window + np.random.normal(0, scale, window.shape).astype(window.dtype)
+os.makedirs(MODEL_DIR,  exist_ok=True)
+os.makedirs(DIAGRAM_DIR, exist_ok=True)
 
 
 # ---------------------------------------------------------------------------
 # Dataset
 # ---------------------------------------------------------------------------
 
-class GestureDataset(Dataset):
-    def __init__(self, data: np.ndarray, labels: np.ndarray,
-                 gesture_names: list[str] | None = None,
-                 augment: bool = False):
-        self.data         = data
-        self.labels       = labels
-        self.gesture_names = gesture_names or GESTURES
-        self.augment      = augment
+def augment_sequence(seq: np.ndarray) -> np.ndarray:
+    """
+    Аугментація одної послідовності (SEQ_LENGTH, INPUT_SIZE).
+    Застосовується тільки під час тренування.
+    """
+    seq = seq.copy()
 
-    def __len__(self) -> int:
+    # 1. Гаусівський шум — імітує тремтіння руки / неточність трекінгу
+    if np.random.rand() < 0.5:
+        seq += np.random.normal(0, 0.005, seq.shape).astype(np.float32)
+
+    # 2. Масштабування — рука ближче/далі від камери
+    if np.random.rand() < 0.5:
+        scale = np.random.uniform(0.85, 1.15)
+        seq *= scale
+
+    # 3. Часовий зсув — починаємо жест трохи раніше або пізніше
+    if np.random.rand() < 0.4:
+        shift = np.random.randint(-3, 4)   # -3..+3 кадри
+        seq = np.roll(seq, shift, axis=0)
+        # Нулюємо кадри, що "провалились" крізь межу
+        if shift > 0:
+            seq[:shift] = 0
+        elif shift < 0:
+            seq[shift:] = 0
+
+    return seq
+
+
+class GestureDataset(Dataset):
+    def __init__(self, data, labels, augment: bool = False):
+        self.data    = data.astype(np.float32)
+        self.labels  = torch.LongTensor(labels)
+        self.augment = augment
+
+    def __len__(self):
         return len(self.data)
 
-    def __getitem__(self, idx: int):
-        window = self.data[idx].copy()
-        label  = self.labels[idx]
-
+    def __getitem__(self, idx):
+        seq = self.data[idx]
         if self.augment:
-            # Невеликий шум для всіх жестів
-            if np.random.rand() < 0.5:
-                window = augment_noise(window)
-
-        return torch.FloatTensor(window), torch.tensor(label, dtype=torch.long)
+            seq = augment_sequence(seq)
+        return torch.FloatTensor(seq), self.labels[idx]
 
 
 # ---------------------------------------------------------------------------
 # Завантаження даних
 # ---------------------------------------------------------------------------
 
-def validate_dataset_size() -> None:
-    """
-    Перевіряє що розмір збережених .npy відповідає INPUT_SIZE.
-    Якщо ні — зупиняє виконання з чіткою помилкою.
-    """
-    for gesture in GESTURES:
-        sample = os.path.join(DATA_PATH, gesture, '0', '0.npy')
-        if os.path.exists(sample):
-            actual = np.load(sample).shape[0]
-            if actual != INPUT_SIZE:
-                raise ValueError(
-                    f"\n[train] ❌ Невідповідність розміру датасету!\n"
-                    f"  Жест '{gesture}': знайдено {actual} ознак, очікується {INPUT_SIZE}\n"
-                    f"  USE_DELTA={USE_DELTA} → INPUT_SIZE={INPUT_SIZE}\n"
-                    f"\n  Рішення:\n"
-                    f"    python src/smart_collector.py --clean   # очистити\n"
-                    f"    python src/smart_collector.py           # зібрати знову\n"
-                )
-
-
-def load_data() -> tuple[np.ndarray, np.ndarray]:
+def load_data():
     X, y = [], []
     label_map = {label: idx for idx, label in enumerate(GESTURES)}
+
+    print(f"\nUSE_DELTA={USE_DELTA} | INPUT_SIZE={INPUT_SIZE}")
+    print(f"Жести: {GESTURES}\n")
 
     for gesture in GESTURES:
         gesture_path = os.path.join(DATA_PATH, gesture)
         if not os.path.exists(gesture_path):
-            print(f"[train] ⚠️  Папка не знайдена: {gesture_path}")
+            print(f"  [!] Папка не знайдена: {gesture_path}")
             continue
 
-        # Беремо тільки папки, назви яких є числами, і сортуємо їх як цілі числа
-        sequences = sorted(
-            [s for s in os.listdir(gesture_path) if s.isdigit()],
-            key=int
-        )
-        print(f"  → '{gesture}': {len(sequences)} sequences")
+        sequences = sorted(os.listdir(gesture_path))
+        loaded = 0
 
         for seq in sequences:
             seq_path = os.path.join(gesture_path, seq)
@@ -122,81 +103,126 @@ def load_data() -> tuple[np.ndarray, np.ndarray]:
 
             window = []
             for frame in frames[:SEQ_LENGTH]:
-                res = np.load(os.path.join(seq_path, frame))
-                window.append(res)
+                kp = np.load(os.path.join(seq_path, frame))
 
-            # Доповнюємо нулями якщо кадрів менше SEQ_LENGTH
+                # Захист від розмірності — якщо файл старого формату (126) а треба 252
+                if kp.shape[0] != INPUT_SIZE:
+                    if USE_DELTA and kp.shape[0] == 126:
+                        # Доповнюємо нулями (дельта = 0)
+                        kp = np.concatenate([kp, np.zeros(126)])
+                    else:
+                        kp = kp[:INPUT_SIZE]  # обрізаємо якщо більше
+
+                window.append(kp)
+
             while len(window) < SEQ_LENGTH:
                 window.append(np.zeros(INPUT_SIZE))
 
             X.append(window)
             y.append(label_map[gesture])
+            loaded += 1
+
+        print(f"  [{gesture:<14}] sequences завантажено: {loaded}")
 
     return np.array(X, dtype=np.float32), np.array(y, dtype=np.int64)
+
+
+# ---------------------------------------------------------------------------
+# Class weights — вирівнювання дисбалансу
+# ---------------------------------------------------------------------------
+
+def compute_weights(y_train: np.ndarray):
+    """
+    Рахує два типи вагів:
+
+    1. class_weights для CrossEntropyLoss — штрафує за помилки
+       на рідких класах сильніше. static має 653 seq, swipe — 100,
+       тому loss для swipe буде в ~6.5x більший.
+
+    2. sample_weights для WeightedRandomSampler — під час кожної епохи
+       samples з рідких класів вибираються частіше, щоб батчі були
+       збалансованими.
+    """
+    classes = np.arange(len(GESTURES))
+
+    # sklearn рахує weight = N / (n_classes * count_per_class)
+    cw = compute_class_weight(class_weight='balanced', classes=classes, y=y_train)
+    class_weights_tensor = torch.FloatTensor(cw)
+
+    # Для кожного sample — вага його класу
+    sample_weights = np.array([cw[label] for label in y_train])
+
+    print("\n--- Class weights ---")
+    for i, gesture in enumerate(GESTURES):
+        count = np.sum(y_train == i)
+        print(f"  {gesture:<15} count={count:>4}  weight={cw[i]:.3f}")
+    print()
+
+    return class_weights_tensor, sample_weights
 
 
 # ---------------------------------------------------------------------------
 # Тренування
 # ---------------------------------------------------------------------------
 
-def train_model() -> None:
-    print(f"\n{'='*55}")
-    print(f"  GESTURE LSTM TRAINER")
-    print(f"  USE_DELTA={USE_DELTA} | INPUT_SIZE={INPUT_SIZE} | DEVICE={DEVICE}")
-    print(f"  Жести ({len(GESTURES)}): {GESTURES}")
-    print(f"{'='*55}\n")
-
-    # 0. Валідація датасету
-    validate_dataset_size()
-
-    os.makedirs(MODEL_DIR,   exist_ok=True)
-    os.makedirs(DIAGRAM_DIR, exist_ok=True)
-
-    # 1. Завантаження
-    print("Завантаження даних...")
+def train_model():
+    # 1. Дані
     X, y = load_data()
-    print(f"\n  Всього зразків: {len(X)}")
-    if len(X) == 0:
-        print("[train] ❌ Датасет порожній! Спочатку зберіть дані.")
-        return
-
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42, stratify=y
     )
-    print(f"  Train: {len(X_train)} | Test: {len(X_test)}")
+
+    # 2. Ваги
+    class_weights, sample_weights = compute_weights(y_train)
+
+    # WeightedRandomSampler — збалансовані батчі
+    sampler = WeightedRandomSampler(
+        weights=torch.FloatTensor(sample_weights),
+        num_samples=len(sample_weights),
+        replacement=True
+    )
 
     train_loader = DataLoader(
         GestureDataset(X_train, y_train, augment=True),
-        batch_size=BATCH_SIZE, shuffle=True,  drop_last=False
+        batch_size=BATCH_SIZE,
+        sampler=sampler       # замість shuffle=True
     )
     test_loader = DataLoader(
         GestureDataset(X_test, y_test, augment=False),
-        batch_size=BATCH_SIZE, shuffle=False
+        batch_size=BATCH_SIZE,
+        shuffle=False
     )
 
-    # 2. Модель
-    model = GestureLSTM(num_classes=len(GESTURES)).to(DEVICE)
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
+    # 3. Модель
+    model = GestureLSTM(num_classes=len(GESTURES))
+
+    # CrossEntropyLoss з class weights — штрафує за помилки на рідких класах
+    criterion = nn.CrossEntropyLoss(weight=class_weights)
+    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
+
+    # LR scheduler — зменшує learning rate якщо accuracy не росте
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='max', patience=10, factor=0.5, min_lr=1e-6
+        optimizer, mode='max', patience=15, factor=0.5
     )
 
-    history = {'train_loss': [], 'test_acc': [], 'lr': []}
-    best_acc    = 0.0
-    no_improve  = 0
-    best_epoch  = 0
+    history = {'train_loss': [], 'test_acc': [], 'per_class_acc': []}
+    best_acc      = 0.0
+    patience_left = PATIENCE   # early stopping
 
-    # 3. Цикл навчання
-    print(f"\nНавчання ({EPOCHS} макс. епох, early stopping після {PATIENCE})...\n")
+    # 4. Цикл навчання
+    print(f"Починаємо навчання на {EPOCHS} епох (early stop patience={PATIENCE})...")
+    print(f"Train: {len(X_train)} (з аугментацією) | Test: {len(X_test)}\n")
+
     for epoch in range(EPOCHS):
         model.train()
         running_loss = 0.0
+
         for inputs, labels in train_loader:
-            inputs, labels = inputs.to(DEVICE), labels.to(DEVICE)
             optimizer.zero_grad()
-            loss = criterion(model(inputs), labels)
+            outputs = model(inputs)
+            loss = criterion(outputs, labels)
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  # стабільність LSTM
             optimizer.step()
             running_loss += loss.item()
 
@@ -205,98 +231,122 @@ def train_model() -> None:
         all_preds, all_labels = [], []
         with torch.no_grad():
             for inputs, labels in test_loader:
-                inputs = inputs.to(DEVICE)
-                _, preds = torch.max(model(inputs), 1)
+                outputs = model(inputs)
+                _, preds = torch.max(outputs, 1)
                 all_preds.extend(preds.cpu().numpy())
-                all_labels.extend(labels.numpy())
+                all_labels.extend(labels.cpu().numpy())
 
         current_acc = accuracy_score(all_labels, all_preds)
         avg_loss    = running_loss / len(train_loader)
-        cur_lr      = optimizer.param_groups[0]['lr']
 
         history['train_loss'].append(avg_loss)
         history['test_acc'].append(current_acc)
-        history['lr'].append(cur_lr)
+
+        # Per-class accuracy — слідкуємо за свайпами окремо
+        per_class = {}
+        for i, gesture in enumerate(GESTURES):
+            mask = np.array(all_labels) == i
+            if mask.sum() > 0:
+                per_class[gesture] = accuracy_score(
+                    np.array(all_labels)[mask],
+                    np.array(all_preds)[mask]
+                )
+        history['per_class_acc'].append(per_class)
 
         scheduler.step(current_acc)
 
-        if (epoch + 1) % 10 == 0 or current_acc > best_acc:
-            print(f"  Epoch {epoch+1:>4}/{EPOCHS} | Loss: {avg_loss:.4f} | "
-                  f"Acc: {current_acc*100:.2f}% | LR: {cur_lr:.2e}")
+        if (epoch + 1) % 10 == 0:
+            lr_now = optimizer.param_groups[0]['lr']
+            print(f"Epoch [{epoch+1:>3}/{EPOCHS}] | Loss: {avg_loss:.4f} | Acc: {current_acc*100:.1f}% | LR: {lr_now:.6f}")
+            for g in ['swipe_left', 'swipe_right']:
+                if g in per_class:
+                    print(f"  {g}: {per_class[g]*100:.1f}%")
 
-        # Збереження найкращої моделі
         if current_acc > best_acc:
-            best_acc   = current_acc
-            best_epoch = epoch + 1
-            no_improve = 0
+            best_acc      = current_acc
+            patience_left = PATIENCE
             torch.save(model.state_dict(), os.path.join(MODEL_DIR, MODEL_NAME))
         else:
-            no_improve += 1
-            if no_improve >= PATIENCE:
-                print(f"\n  Early stopping на епосі {epoch+1} (немає покращення {PATIENCE} епох)")
+            patience_left -= 1
+            if patience_left == 0:
+                print(f"\nEarly stopping на епосі {epoch+1} (не покращилось {PATIENCE} епох)")
                 break
 
-    print(f"\n  ✓ Найкраща точність: {best_acc*100:.2f}% (epoch {best_epoch})")
-    print(f"  Модель збережена: {os.path.join(MODEL_DIR, MODEL_NAME)}")
+    print(f"\nНавчання завершено! Найкраща точність: {best_acc*100:.2f}%")
 
-    # 4. Збереження history
-    history_path = os.path.join(DIAGRAM_DIR, 'training_history.json')
-    with open(history_path, 'w', encoding='utf-8') as f:
-        json.dump({
-            'best_acc': best_acc,
-            'best_epoch': best_epoch,
-            'use_delta': USE_DELTA,
-            'input_size': INPUT_SIZE,
-            'gestures': GESTURES,
-            'train_loss': history['train_loss'],
-            'test_acc': history['test_acc'],
-        }, f, indent=2)
+    # 5. Фінальна per-class точність
+    print("\n--- Фінальна точність по класах ---")
+    final_per_class = history['per_class_acc'][-1]
+    for gesture in GESTURES:
+        acc = final_per_class.get(gesture, 0)
+        bar = "█" * int(acc * 20)
+        status = "✓" if acc >= 0.85 else "⚠"
+        print(f"  {status} {gesture:<15} {acc*100:>5.1f}%  {bar}")
 
-    # 5. Графіки
-    plt.figure(figsize=(14, 5))
+    # 6. Графіки
+    _plot_history(history)
+    _plot_confusion_matrix(all_labels, all_preds)
 
-    plt.subplot(1, 3, 1)
-    plt.plot(history['train_loss'], label='Loss', color='steelblue')
-    plt.title('Training Loss')
-    plt.xlabel('Epoch'); plt.legend(); plt.grid(True, alpha=0.3)
+    print(f"\nГрафіки збережені в: {DIAGRAM_DIR}/")
 
-    plt.subplot(1, 3, 2)
-    plt.plot([a * 100 for a in history['test_acc']], label='Accuracy %', color='orange')
-    plt.axhline(best_acc * 100, color='green', linestyle='--', label=f'Best {best_acc*100:.1f}%')
-    plt.title('Validation Accuracy')
-    plt.xlabel('Epoch'); plt.legend(); plt.grid(True, alpha=0.3)
 
-    plt.subplot(1, 3, 3)
-    plt.plot(history['lr'], label='LR', color='red')
-    plt.title('Learning Rate')
-    plt.xlabel('Epoch'); plt.yscale('log'); plt.legend(); plt.grid(True, alpha=0.3)
+# ---------------------------------------------------------------------------
+# Візуалізація
+# ---------------------------------------------------------------------------
+
+def _plot_history(history: dict):
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+    axes[0].plot(history['train_loss'], label='Loss', color='#e74c3c')
+    axes[0].set_title('Training Loss')
+    axes[0].set_xlabel('Epoch')
+    axes[0].legend()
+    axes[0].grid(alpha=0.3)
+
+    axes[1].plot(history['test_acc'], label='Overall Acc', color='#2ecc71', linewidth=2)
+
+    # Окремо свайпи
+    for gesture, color in [('swipe_left', '#3498db'), ('swipe_right', '#9b59b6')]:
+        vals = [ep.get(gesture, 0) for ep in history['per_class_acc']]
+        axes[1].plot(vals, label=gesture, color=color, linestyle='--', alpha=0.8)
+
+    axes[1].set_title('Validation Accuracy')
+    axes[1].set_xlabel('Epoch')
+    axes[1].set_ylim(0, 1.05)
+    axes[1].legend()
+    axes[1].grid(alpha=0.3)
 
     plt.tight_layout()
     plt.savefig(os.path.join(DIAGRAM_DIR, 'learning_process.png'), dpi=120)
     plt.close()
 
-    # Матриця помилок
-    model.load_state_dict(torch.load(os.path.join(MODEL_DIR, MODEL_NAME), map_location=DEVICE))
-    model.eval()
-    all_preds, all_labels = [], []
-    with torch.no_grad():
-        for inputs, labels in test_loader:
-            inputs = inputs.to(DEVICE)
-            _, preds = torch.max(model(inputs), 1)
-            all_preds.extend(preds.cpu().numpy())
-            all_labels.extend(labels.numpy())
 
+def _plot_confusion_matrix(all_labels, all_preds):
     cm = confusion_matrix(all_labels, all_preds)
-    plt.figure(figsize=(10, 8))
-    sns.heatmap(cm, annot=True, fmt='d',
-                xticklabels=GESTURES, yticklabels=GESTURES, cmap='Blues')
-    plt.title('Confusion Matrix (best model)')
-    plt.xlabel('Predicted'); plt.ylabel('True')
-    plt.tight_layout()
-    plt.savefig(os.path.join(DIAGRAM_DIR, 'final_confusion_matrix.png'), dpi=120)
-    plt.close()
 
-    print(f"\n  Графіки збережені в: {DIAGRAM_DIR}")
+    # Нормалізована матриця (відсотки) — краще бачити плутанину
+    cm_norm = cm.astype(float) / cm.sum(axis=1, keepdims=True)
+
+    fig, axes = plt.subplots(1, 2, figsize=(18, 7))
+
+    sns.heatmap(cm, annot=True, fmt='d',
+                xticklabels=GESTURES, yticklabels=GESTURES,
+                cmap='Blues', ax=axes[0])
+    axes[0].set_title('Confusion Matrix (counts)')
+    axes[0].set_xlabel('Predicted')
+    axes[0].set_ylabel('True')
+
+    sns.heatmap(cm_norm, annot=True, fmt='.0%',
+                xticklabels=GESTURES, yticklabels=GESTURES,
+                cmap='Blues', vmin=0, vmax=1, ax=axes[1])
+    axes[1].set_title('Confusion Matrix (normalized)')
+    axes[1].set_xlabel('Predicted')
+    axes[1].set_ylabel('True')
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(DIAGRAM_DIR, 'confusion_matrix.png'), dpi=120)
+    plt.close()
+    print("Confusion matrix збережена.")
 
 
 if __name__ == "__main__":

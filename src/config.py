@@ -49,7 +49,8 @@ INPUT_SIZE = 252 if USE_DELTA else 126
 SEQ_LENGTH      = _model_cfg.get("seq_length",      30)
 THRESHOLD       = _model_cfg.get("threshold",        0.92)
 SWITCH_FRAMES   = _model_cfg.get("switch_frames",    7)
-COOLDOWN_FRAMES = _model_cfg.get("cooldown_frames",  40)
+COOLDOWN_FRAMES       = _model_cfg.get("cooldown_frames",       40)
+SWIPE_COOLDOWN_FRAMES = _model_cfg.get("swipe_cooldown_frames", 12)  # Короткий cooldown для swipe_left / swipe_right
 
 # ---------------------------------------------------------------------------
 # Параметри миші

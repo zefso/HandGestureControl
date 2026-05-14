@@ -370,6 +370,24 @@ class TestConfig:
     def test_no_duplicate_gestures(self):
         assert len(GESTURES) == len(set(GESTURES))
 
+    def test_swipe_cooldown_frames_imported(self):
+        from src.config import SWIPE_COOLDOWN_FRAMES
+        assert isinstance(SWIPE_COOLDOWN_FRAMES, int)
+        assert SWIPE_COOLDOWN_FRAMES > 0
+
+    def test_swipe_cooldown_less_than_regular(self):
+        from src.config import COOLDOWN_FRAMES, SWIPE_COOLDOWN_FRAMES
+        assert SWIPE_COOLDOWN_FRAMES < COOLDOWN_FRAMES, (
+            f"SWIPE_COOLDOWN_FRAMES ({SWIPE_COOLDOWN_FRAMES}) має бути < "
+            f"COOLDOWN_FRAMES ({COOLDOWN_FRAMES})"
+        )
+
+    def test_swipe_gestures_are_valid(self):
+        """Усі жести з SWIPE_GESTURES мають бути в списку GESTURES."""
+        from src.main import SWIPE_GESTURES
+        for g in SWIPE_GESTURES:
+            assert g in GESTURES, f"'{g}' є в SWIPE_GESTURES але відсутній у GESTURES"
+
 
 # ===========================================================================
 # 7. reset_delta_state

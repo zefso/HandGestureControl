@@ -154,12 +154,12 @@ def draw_top_bar(frame, gesture: str, seq_idx: int, recorded: int, max_count: in
     cv2.putText(frame, f"GESTURE: {gesture.upper()}", (12, 28),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.85, CLR_WHITE, 2)
     pct = recorded / max_count if max_count > 0 else 0
-    bar_x, bar_y, bar_w, bar_h = 12, 40, w - 24, 14
+    bar_x, bar_y, bar_w, bar_h = 12, 40, w - 110, 14
     cv2.rectangle(frame, (bar_x, bar_y), (bar_x + bar_w, bar_y + bar_h), (60, 60, 60), -1)
     cv2.rectangle(frame, (bar_x, bar_y),
                   (bar_x + int(bar_w * pct), bar_y + bar_h), CLR_OK, -1)
     cv2.putText(frame, f"{recorded}/{max_count}",
-                (bar_x + bar_w + 6, bar_y + 11), cv2.FONT_HERSHEY_SIMPLEX, 0.45, CLR_WHITE, 1)
+                (bar_x + bar_w + 8, bar_y + 11), cv2.FONT_HERSHEY_SIMPLEX, 0.45, CLR_WHITE, 1)
 
 
 def draw_hint(frame, hint: str, seq_idx: int) -> None:
@@ -273,7 +273,7 @@ def record_sequence(cap, hands, gesture: str, seq_idx: int, max_count: int) -> b
         cv2.putText(frame, f"REC {frame_count}/{SEQ_LENGTH}",
                     (10, rec_y + 28), cv2.FONT_HERSHEY_SIMPLEX, 0.55, CLR_ERR, 2)
 
-        lost_pct = lost_frames / max(frame_count, 1)
+        lost_pct = lost_frames / frame_count
         q_color = CLR_OK if lost_pct < MAX_LOST_RATIO else CLR_WARN
         cv2.putText(frame, f"LOST: {int(lost_pct * 100)}%",
                     (w - 130, rec_y + 28), cv2.FONT_HERSHEY_SIMPLEX, 0.55, q_color, 2)
@@ -283,7 +283,7 @@ def record_sequence(cap, hands, gesture: str, seq_idx: int, max_count: int) -> b
         cv2.waitKey(1)
 
     # --- Quality check ---
-    lost_ratio = lost_frames / max(SEQ_LENGTH, 1)
+    lost_ratio = lost_frames / SEQ_LENGTH
     if lost_ratio > MAX_LOST_RATIO:
         msg = f"REJECTED — {int(lost_ratio * 100)}% frames without hand (max {int(MAX_LOST_RATIO * 100)}%)"
         print(f"[Collector] ❌ Sequence {seq_idx} | {msg}")
@@ -429,8 +429,8 @@ if __name__ == "__main__":
                         help='Очистити весь датасет і почати знову')
     parser.add_argument('--target', type=str, default=None,
                         help='Назва конкретного жесту для збору (наприклад, static або swipe_right)')
-    parser.add_argument('--count', type=int, default=100,
-                        help='Скільки прикладів зібрати (за замовчуванням 100)')
+    parser.add_argument('--count', type=int, default=200,
+                        help='Скільки прикладів зібрати (за замовчуванням 200)')
     args = parser.parse_args()
 
     if args.target and args.target not in GESTURES:

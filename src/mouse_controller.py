@@ -24,8 +24,26 @@ class AirMouse:
         self.is_pressed = False
         self._prev_scroll_y: float | None = None
 
+    # Якщо відстань великий-вказівний менша за цей поріг —
+    # курсор заморожується, щоб клік не зміщував позицію.
+    _CLICK_FREEZE_DIST = 0.07
+
     def move(self, hand_landmarks) -> None:
-        """Переміщує курсор до позиції вказівного пальця (landmark 8)."""
+        """Переміщує курсор до позиції вказівного пальця (landmark 8).
+        Курсор не рухається під час натискання та в зоні підходу до кліку,
+        щоб уникнути стрибка курсора вниз при стисканні пальців.
+        """
+        # Заморожуємо курсор поки кнопка натиснута
+        if self.is_pressed:
+            return
+
+        # Заморожуємо коли пальці вже наближаються (pre-click зона)
+        thumb = hand_landmarks.landmark[4]
+        index = hand_landmarks.landmark[8]
+        dist  = ((thumb.x - index.x) ** 2 + (thumb.y - index.y) ** 2) ** 0.5
+        if dist < self._CLICK_FREEZE_DIST:
+            return
+
         idx_tip = hand_landmarks.landmark[8]
         curr_x = np.interp(idx_tip.x, self.zone_x, [0, self.screen_w])
         curr_y = np.interp(idx_tip.y, self.zone_y, [0, self.screen_h])

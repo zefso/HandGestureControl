@@ -6,13 +6,15 @@ data_analysis.py — аналіз якості зібраного датасет
   - Фактичний розмір .npy файлів (чи відповідає INPUT_SIZE)
   - Відсоток порожніх кадрів (рука не виявлена)
   - Загальну статистику
+
+Запуск: python src/tools/data_analysis.py
 """
 
 import os
 import sys
 import numpy as np
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 from src.config import DATA_PATH, INPUT_SIZE, USE_DELTA, GESTURES, SEQ_LENGTH
 
 
@@ -35,11 +37,12 @@ def analyze_data() -> None:
     for gesture in GESTURES:
         gesture_path = os.path.join(DATA_PATH, gesture)
         if not os.path.exists(gesture_path):
-            print(f"  ⚠️  '{gesture}': папка відсутня")
+            print(f"  [!] '{gesture}': папка відсутня")
             continue
 
         sequences = sorted(
-            [s for s in os.listdir(gesture_path) if os.path.isdir(os.path.join(gesture_path, s)) and s.isdigit()],
+            [s for s in os.listdir(gesture_path)
+             if os.path.isdir(os.path.join(gesture_path, s)) and s.isdigit()],
             key=int
         )
         seq_count    = len(sequences)
@@ -56,13 +59,10 @@ def analyze_data() -> None:
                 fpath = os.path.join(seq_path, fname)
                 data  = np.load(fpath)
 
-                # Перевірка розміру
                 if data.shape[0] != INPUT_SIZE:
                     wrong_size += 1
                     continue
 
-                # Перевірка порожніх кадрів
-                # Координатна частина: перші 126 елементів
                 coord_part = data[:126]
                 if np.all(coord_part == 0):
                     lost_frames += 1
@@ -73,27 +73,25 @@ def analyze_data() -> None:
         total_lost      += lost_frames
         size_mismatches += wrong_size
 
-        # Статус рядок
-        status = "✓" if loss_rate <= 10 and wrong_size == 0 else "⚠"
-        print(f"  [{status}] {gesture:<15} | sequences: {seq_count:>3} | "
-              f"кадри: {frames_total:>5} | lost: {loss_rate:>5.1f}%", end="")
+        status = "[OK]" if loss_rate <= 10 and wrong_size == 0 else "[!!]"
+        print(f"  {status} {gesture:<15} | seq: {seq_count:>3} | "
+              f"frames: {frames_total:>5} | lost: {loss_rate:>5.1f}%", end="")
         if wrong_size > 0:
-            print(f" | ❌ WRONG SIZE: {wrong_size} файлів (очікується {INPUT_SIZE})", end="")
+            print(f" | WRONG SIZE: {wrong_size} (expected {INPUT_SIZE})", end="")
         if loss_rate > 10:
-            print(f" | ⚠️ ВИСОКА ВТРАТА", end="")
+            print(f" | HIGH LOSS", end="")
         print()
 
-    # Підсумок
     global_loss = (total_lost / total_frames * 100) if total_frames > 0 else 0.0
     print(f"\n{'─'*60}")
-    print(f"  Всього sequences : {total_sequences}")
-    print(f"  Всього кадрів   : {total_frames}")
-    print(f"  Глобальна втрата : {global_loss:.2f}%")
+    print(f"  Total sequences : {total_sequences}")
+    print(f"  Total frames    : {total_frames}")
+    print(f"  Global loss     : {global_loss:.2f}%")
     if size_mismatches > 0:
-        print(f"\n  ❌ ЗНАЙДЕНО {size_mismatches} файлів з неправильним розміром!")
-        print(f"     Запустіть: python src/smart_collector.py --clean")
+        print(f"\n  ERROR: {size_mismatches} files with wrong size!")
+        print(f"  Run: python src/smart_collector.py --clean")
     else:
-        print(f"\n  ✓ Всі файли мають правильний розмір ({INPUT_SIZE})")
+        print(f"\n  [OK] All files have correct size ({INPUT_SIZE})")
 
 
 if __name__ == "__main__":
