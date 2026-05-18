@@ -9,6 +9,7 @@ numpy==2.2.6
 PyAutoGUI==0.9.54
 comtypes==1.4.15
 pycaw==20251023
+pywin32==311
 
 # ── ML training & visualization ───────────────────────────────────
 scikit-learn==1.8.0

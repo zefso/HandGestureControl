@@ -24,15 +24,15 @@ try:
     )
     from src.mouse_controller import AirMouse
     from src.hud import HUD, C, rr, txt, MODE_COLORS
+    from src.hotkey_executor import GestureActionExecutor
 except ImportError as e:
     print(f'[Import error] {e}')
     sys.exit(1)
 
 pyautogui.PAUSE    = 0
-pyautogui.FAILSAFE = False
 
 # Exported for tests
-SWIPE_GESTURES = ['swipe_left', 'swipe_right']
+SWIPE_GESTURES = ['swipe_left', 'swipe_right', 'swipe_up', 'swipe_down']
 APP_VERSION    = '2.1'
 
 # Available display resolutions shown in settings panel
@@ -44,23 +44,108 @@ DISP_RESOLUTIONS = [
 
 
 def _get_camera_labels() -> list[str]:
-    """Return DirectShow device names in capture order (matches OpenCV indices)."""
+    """Return camera names in DirectShow order (matches OpenCV CAP_DSHOW indices).
+
+    Tries three methods in order of accuracy:
+      1. pygrabber  — exact DirectShow enumeration (install with: pip install pygrabber)
+      2. comtypes   — same DirectShow API, no extra packages needed
+      3. WMI query  — physical cameras only, virtual cameras get 'Cam N'
+    """
+    # ── 1. pygrabber (ideal) ──────────────────────────────────────────────────
     try:
         from pygrabber.dshow_graph import FilterGraph
         return FilterGraph().get_input_devices()
     except Exception:
         pass
+
+    # ── 2. comtypes DirectShow enumeration ───────────────────────────────────
     try:
-        import win32com.client
-        wmi = win32com.client.GetObject("winmgmts:")
-        names = [item.Name for item in wmi.InstancesOf("Win32_PnPEntity")
-                 if hasattr(item, 'PNPClass') and item.PNPClass in ('Camera', 'Image')
-                 and item.Name]
+        import comtypes, comtypes.client, comtypes.automation
+        from comtypes import GUID, IUnknown, HRESULT, POINTER
+        import ctypes
+
+        class IPropertyBag(IUnknown):
+            _iid_ = GUID("{55272A00-42CB-11CE-8135-00AA004BB851}")
+            _methods_ = [
+                comtypes.COMMETHOD([], HRESULT, 'Read',
+                    (['in'],        ctypes.c_wchar_p,                     'pszPropName'),
+                    (['in', 'out'], POINTER(comtypes.automation.VARIANT), 'pVar'),
+                    (['in'],        POINTER(IUnknown),                    'pErrorLog')),
+                comtypes.COMMETHOD([], HRESULT, 'Write',
+                    (['in'],        ctypes.c_wchar_p,                     'pszPropName'),
+                    (['in'],        POINTER(comtypes.automation.VARIANT), 'pVar')),
+            ]
+
+        class IEnumMoniker(IUnknown):
+            _iid_ = GUID("{00000102-0000-0000-C000-000000000046}")
+            _methods_ = [
+                comtypes.COMMETHOD([], HRESULT, 'Next',
+                    (['in'],  ctypes.c_ulong,             'celt'),
+                    (['out'], POINTER(POINTER(IUnknown)), 'rgelt'),
+                    (['out'], POINTER(ctypes.c_ulong),    'pceltFetched')),
+                comtypes.COMMETHOD([], HRESULT, 'Skip',  (['in'], ctypes.c_ulong, 'celt')),
+                comtypes.COMMETHOD([], HRESULT, 'Reset'),
+                comtypes.COMMETHOD([], HRESULT, 'Clone', (['out'], POINTER(ctypes.c_void_p), 'pp')),
+            ]
+
+        class ICreateDevEnum(IUnknown):
+            _iid_ = GUID("{29840822-5B84-11D0-BD3B-00A0C911CE86}")
+            _methods_ = [
+                comtypes.COMMETHOD([], HRESULT, 'CreateClassEnumerator',
+                    (['in'],  POINTER(GUID),                 'clsidDeviceClass'),
+                    (['out'], POINTER(POINTER(IEnumMoniker)), 'ppEnumMoniker'),
+                    (['in'],  ctypes.c_ulong,                 'dwFlags')),
+            ]
+
+        CLSID_SystemDevEnum   = GUID("{62BE5D10-60EB-11d0-BD3B-00A0C911CE86}")
+        GUID_VideoCapture     = GUID("{860BB310-5D01-11d0-BD3B-00A0C911CE86}")
+
+        dev_enum  = comtypes.client.CreateObject(
+            CLSID_SystemDevEnum, interface=ICreateDevEnum,
+            clsctx=comtypes.CLSCTX_INPROC_SERVER)
+        enum_mon  = dev_enum.CreateClassEnumerator(
+            ctypes.byref(GUID_VideoCapture), 0)
+        if not enum_mon:
+            raise RuntimeError("no video devices")
+
+        names = []
+        while True:
+            moniker, fetched = enum_mon.Next(1)
+            if fetched == 0:
+                break
+            try:
+                bag  = moniker.QueryInterface(IPropertyBag)
+                name = bag.Read("FriendlyName", comtypes.automation.VARIANT(), None)
+                if name:
+                    names.append(str(name))
+            except Exception:
+                pass
         if names:
             return names
     except Exception:
         pass
+
+    # ── 3. WMI fallback (physical cameras only) ───────────────────────────────
+    try:
+        import win32com.client
+        svc   = win32com.client.GetObject("winmgmts://./root/cimv2")
+        names = [row.Name for row in svc.ExecQuery(
+            "SELECT Name FROM Win32_PnPEntity WHERE PNPClass = 'Camera'"
+        ) if row.Name]
+        if names:
+            return names
+    except Exception:
+        pass
+
     return []
+
+
+def _ascii_cam_name(raw: str) -> str:
+    """Strip non-ASCII characters and collapse whitespace for OpenCV rendering."""
+    import re
+    cleaned = re.sub(r'[^\x20-\x7E]+', ' ', raw)
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    return cleaned or raw[:24]
 
 
 def _detect_cameras(max_idx: int = 5) -> list[tuple[int, str]]:
@@ -71,7 +156,8 @@ def _detect_cameras(max_idx: int = 5) -> list[tuple[int, str]]:
         try:
             cap = cv2.VideoCapture(i, cv2.CAP_DSHOW)
             if cap.isOpened() and cap.read()[0]:
-                name = labels[i] if i < len(labels) else f'Cam {i}'
+                raw  = labels[i] if i < len(labels) else f'Cam {i}'
+                name = _ascii_cam_name(raw)
                 found.append((i, name))
             cap.release()
         except Exception:
@@ -112,46 +198,7 @@ def _title_to_profile(title: str) -> str:
 
 # ── GestureActionExecutor ─────────────────────────────────────────────────────
 
-class GestureActionExecutor:
-    """Executes gesture actions from the active profile in gestures.json."""
 
-    def __init__(self, profile: str = 'default'):
-        self._profile = profile
-        self._actions: dict = {}
-        self._reload()
-
-    def set_profile(self, profile: str):
-        self._profile = profile
-        self._reload()
-
-    def _reload(self):
-        try:
-            path = os.path.join(os.path.dirname(__file__), 'gestures.json')
-            with open(path, encoding='utf-8') as fp:
-                cfg = json.load(fp)
-            self._actions = (cfg.get('profiles', {})
-                               .get(self._profile, {})
-                               .get('actions', {}))
-        except Exception:
-            self._actions = GESTURE_ACTIONS
-
-    def execute(self, gesture: str) -> str:
-        a = self._actions.get(gesture)
-        if not a:
-            return gesture
-        try:
-            t = a.get('type')
-            if t == 'hotkey':
-                pyautogui.hotkey(*a.get('keys', []))
-            elif t == 'key':
-                pyautogui.press(a.get('key', ''))
-            elif t == 'url':
-                webbrowser.open(a.get('url', ''))
-            elif t == 'command':
-                os.system(a.get('cmd', ''))
-        except Exception as e:
-            print(f'[Executor] {e}')
-        return a.get('description', gesture)
 
 
 # ── GestureControlApp ─────────────────────────────────────────────────────────
@@ -173,7 +220,7 @@ class GestureControlApp:
     _AUTO_INTERVAL  = 60    # frames between auto-profile checks
     _FONT           = cv2.FONT_HERSHEY_SIMPLEX
 
-    def __init__(self, cam_idx: int = 0, disp_w: int = 1280, disp_h: int = 720):
+    def __init__(self, cam_idx: int = 0, disp_w: int = 960, disp_h: int = 540):
         self._cam_idx  = cam_idx
         self._disp_w   = disp_w
         self._disp_h   = disp_h
@@ -183,8 +230,9 @@ class GestureControlApp:
         # Runtime state
         self._mode       = 'GESTURES'
         self._seq: list  = []
-        self._cooldown   = 0
-        self._swipe_cd   = 0
+        self._cooldown      = 0
+        self._swipe_cd      = 0
+        self._swipe_locked  = False   # require static between swipe fires
         self._fist_cnt   = 0
         self._switch_cnt = 0
         self._last_act   = 'ready'
@@ -201,7 +249,9 @@ class GestureControlApp:
         self._auto_cnt         = 0
 
         # Components
-        self._executor = GestureActionExecutor(self._profile)
+        config_path = os.path.join(os.path.dirname(__file__), 'gestures.json')
+        self._executor = GestureActionExecutor(config_path)
+        self._executor.set_profile(self._profile)
         self._hud      = HUD()
         self._mouse    = AirMouse(smoothing=MOUSE_SMOOTHING)
         self._volume   = VolumeController()
@@ -303,6 +353,9 @@ class GestureControlApp:
         if k == ord('p'):
             self._paused = not self._paused
             self._hud.flash('PAUSED' if self._paused else 'RESUMED')
+            if self._paused:
+                self._seq = []
+                reset_delta_state()
         if k == ord('t'):
             self._test_mode = not self._test_mode
             self._confirm_buf.clear()
@@ -350,25 +403,15 @@ class GestureControlApp:
                     lm[16].y > lm[14].y and   # ring down
                     lm[20].y > lm[18].y)      # pinky down
 
-        elif gesture == 'thumbs_up':
-            return (lm[4].y < lm[3].y < lm[2].y and
-                    all(lm[tip].y > lm[tip - 2].y for tip in [8, 12, 16, 20]))
-
         return True
-
-    @staticmethod
-    def _detect_thumbs_up(right_lms) -> bool:
-        """Geometric-only thumbs-up detection (no LSTM needed)."""
-        if right_lms is None:
-            return False
-        lm = right_lms.landmark
-        return (lm[4].y < lm[3].y < lm[2].y < lm[1].y and
-                lm[4].y < lm[9].y and
-                all(lm[tip].y > lm[tip - 2].y for tip in [8, 12, 16, 20]))
 
     def _run_gesture(self, detected: str, right_lms=None, left_lms=None):
         is_swipe = detected in SWIPE_GESTURES
-        can_fire = (self._swipe_cd == 0) if is_swipe else (self._cooldown == 0)
+        # Swipes need cooldown AND must return to 'static' between fires
+        if is_swipe:
+            can_fire = self._swipe_cd == 0 and not self._swipe_locked
+        else:
+            can_fire = self._cooldown == 0
 
         if detected not in ('static', 'ok', 'stop') and can_fire:
             if not self._verify_gesture(detected, right_lms, left_lms):
@@ -377,7 +420,8 @@ class GestureControlApp:
             self._last_act = desc
             self._history.append(detected)
             if is_swipe:
-                self._swipe_cd = SWIPE_COOLDOWN_FRAMES
+                self._swipe_cd     = SWIPE_COOLDOWN_FRAMES
+                self._swipe_locked = True   # block until static is confirmed
             else:
                 self._cooldown = COOLDOWN_FRAMES
             print(f'>>> {detected.upper()} -> {desc}')
@@ -397,25 +441,55 @@ class GestureControlApp:
 
     # ── Mouse mode rendering ──────────────────────────────────────────────────
 
-    def _run_mouse(self, frame, right):
+    def _run_mouse(self, frame, right, left=None):
+        hp, wp = frame.shape[:2]
+
+        # ── Right hand: cursor + click ────────────────────────────────────────
+        if right:
+            try:
+                self._mouse.move(right)
+                state = self._mouse.handle_actions(right)
+                ix = int(right.landmark[8].x * wp)
+                iy = int(right.landmark[8].y * hp)
+                if state == 'L_DOWN':
+                    cv2.circle(frame, (ix, iy), 20, C['green'], -1)
+                    cv2.circle(frame, (ix, iy), 22, C['white'],  2)
+                elif state == 'RIGHT_CLICK':
+                    cv2.circle(frame, (ix, iy), 20, C['red'],   -1)
+                    cv2.circle(frame, (ix, iy), 22, C['white'],  2)
+                else:
+                    cv2.circle(frame, (ix, iy), 10, C['purple'], 2)
+            except Exception as e:
+                print(f'[Mouse-R] {e}')
+
+        # ── Left hand: position-based scroll ─────────────────────────────────
         try:
-            hp, wp  = frame.shape[:2]
-            self._mouse.move(right)
-            state = self._mouse.handle_actions(right)
-            ix    = int(right.landmark[8].x * wp)
-            iy    = int(right.landmark[8].y * hp)
-            if state == 'L_DOWN':
-                cv2.circle(frame, (ix, iy), 20, C['green'], -1)
-                cv2.circle(frame, (ix, iy), 22, C['white'], 2)
-            elif state == 'RIGHT_CLICK':
-                cv2.circle(frame, (ix, iy), 20, C['red'], -1)
-                cv2.circle(frame, (ix, iy), 22, C['white'], 2)
-            elif state == 'SCROLLING':
-                cv2.arrowedLine(frame, (ix, iy - 28), (ix, iy + 28), C['accent'], 3)
-            else:
-                cv2.circle(frame, (ix, iy), 10, C['purple'], 2)
+            scroll_state, intensity = self._mouse.handle_left_scroll(left if left else None)
         except Exception as e:
-            print(f'[Mouse] {e}')
+            print(f'[Mouse-L] {e}')
+            scroll_state, intensity = 'IDLE', 0.0
+
+        if scroll_state != 'IDLE' and left:
+            ix  = int(left.landmark[8].x * wp)
+            iy  = int(left.landmark[8].y * hp)
+            col = C['green'] if scroll_state == 'SCROLL_UP' else C['orange']
+            # Speed bar: vertical strip on left edge
+            bar_h  = int(hp * 0.4)
+            bar_x  = 28
+            bar_y  = (hp - bar_h) // 2
+            filled = int(bar_h * intensity)
+            cv2.rectangle(frame, (bar_x, bar_y),
+                          (bar_x + 12, bar_y + bar_h), C['dark'], -1)
+            if scroll_state == 'SCROLL_UP':
+                cv2.rectangle(frame, (bar_x, bar_y),
+                              (bar_x + 12, bar_y + filled), col, -1)
+                cv2.arrowedLine(frame, (ix, iy + 20), (ix, iy - 20), col, 3)
+            else:
+                cv2.rectangle(frame, (bar_x, bar_y + bar_h - filled),
+                              (bar_x + 12, bar_y + bar_h), col, -1)
+                cv2.arrowedLine(frame, (ix, iy - 20), (ix, iy + 20), col, 3)
+            txt(frame, 'SCROLL', (bar_x - 2, bar_y - 10),
+                scale=0.36, color=col)
 
     # ── Main loop ─────────────────────────────────────────────────────────────
 
@@ -473,6 +547,18 @@ class GestureControlApp:
                         cap.release()
                         cv2.destroyAllWindows()
                         return
+                    
+                    # Track window resize
+                    try:
+                        rect = cv2.getWindowImageRect('Gesture Control Hub')
+                        if rect is not None and rect[2] > 0 and rect[3] > 0:
+                            if rect[2] != DISP_W or rect[3] != DISP_H:
+                                DISP_W, DISP_H = rect[2], rect[3]
+                                self._disp_w, self._disp_h = DISP_W, DISP_H
+                                need_scale = (cam_w != DISP_W or cam_h != DISP_H)
+                    except Exception:
+                        pass
+                        
                     ret, frame = cap.read()
                     if not ret:
                         break
@@ -553,6 +639,10 @@ class GestureControlApp:
                                  if self._confirm_buf.count(detected) >= 3
                                  else 'static')
 
+                    # Unlock swipe once hand returns to static
+                    if confirmed == 'static':
+                        self._swipe_locked = False
+
                     # ── Mode switch ───────────────────────────────────────
                     trigger = 'ok'    if self._mode == 'GESTURES' else 'stop'
                     target  = 'MOUSE' if self._mode == 'GESTURES' else 'GESTURES'
@@ -571,18 +661,14 @@ class GestureControlApp:
                         self._switch_cnt = max(0, self._switch_cnt - 1)
 
                     # ── MOUSE mode ────────────────────────────────────────
-                    if self._mode == 'MOUSE' and not switching and right:
-                        self._run_mouse(frame, right)
+                    if self._mode == 'MOUSE' and not switching:
+                        self._run_mouse(frame, right, left)
                         self._last_act = 'MOUSE ACTIVE'
 
                     # ── GESTURES mode ─────────────────────────────────────
                     elif self._mode == 'GESTURES' and not switching:
-                        geo = confirmed
-                        if confirmed == 'static' and self._detect_thumbs_up(right):
-                            geo  = 'thumbs_up'
-                            conf = 1.0
                         if not self._test_mode:
-                            self._run_gesture(geo, right, left)
+                            self._run_gesture(confirmed, right, left)
 
                     # ── Cooldowns ─────────────────────────────────────────
                     if self._cooldown > 0: self._cooldown -= 1

@@ -194,10 +194,11 @@ def train_model():
     )
 
     # 3. Модель
-    model = GestureLSTM(num_classes=len(GESTURES))
+    from src.config import DEVICE
+    model = GestureLSTM(num_classes=len(GESTURES)).to(DEVICE)
 
     # CrossEntropyLoss з class weights — штрафує за помилки на рідких класах
-    criterion = nn.CrossEntropyLoss(weight=class_weights)
+    criterion = nn.CrossEntropyLoss(weight=class_weights.to(DEVICE))
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
     # LR scheduler — зменшує learning rate якщо accuracy не росте
@@ -218,6 +219,7 @@ def train_model():
         running_loss = 0.0
 
         for inputs, labels in train_loader:
+            inputs, labels = inputs.to(DEVICE), labels.to(DEVICE)
             optimizer.zero_grad()
             outputs = model(inputs)
             loss = criterion(outputs, labels)
@@ -231,6 +233,7 @@ def train_model():
         all_preds, all_labels = [], []
         with torch.no_grad():
             for inputs, labels in test_loader:
+                inputs, labels = inputs.to(DEVICE), labels.to(DEVICE)
                 outputs = model(inputs)
                 _, preds = torch.max(outputs, 1)
                 all_preds.extend(preds.cpu().numpy())

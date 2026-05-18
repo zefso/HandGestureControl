@@ -218,7 +218,7 @@ def record_sequence(cap, hands, gesture: str, seq_idx: int, max_count: int) -> b
     is_single_hand = gesture in SINGLE_HAND_GESTURES
 
     # --- Плавний зворотній відлік 3..1 ---
-    for countdown in range(3, 0, -1):
+    for countdown in range(2, 0, -1):
         deadline = time.time() + 0.7
         while time.time() < deadline:
             ret, frame = cap.read()
@@ -312,7 +312,7 @@ def collect_data(target_gesture: str | None, max_count: int) -> None:
         if ans != 'y':
             return
 
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
     if not cap.isOpened():
         print("[Collector] Помилка: камера не знайдена.")
         return

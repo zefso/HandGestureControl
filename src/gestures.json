@@ -7,7 +7,10 @@
     "ok",
     "stop",
     "browser",
-    "fist_left"
+    "fist_left",
+    "swipe_up",
+    "swipe_down",
+    "call_me"
   ],
   "active_profile": "default",
   "profiles": {
@@ -16,18 +19,12 @@
       "actions": {
         "swipe_left": {
           "type": "hotkey",
-          "keys": [
-            "alt",
-            "tab"
-          ],
+          "keys": ["alt", "tab"],
           "description": "Switch window"
         },
         "swipe_right": {
           "type": "hotkey",
-          "keys": [
-            "ctrl",
-            "tab"
-          ],
+          "keys": ["ctrl", "tab"],
           "description": "Next tab"
         },
         "browser": {
@@ -37,20 +34,23 @@
         },
         "fist_left": {
           "type": "hotkey",
-          "keys": [
-            "win",
-            "d"
-          ],
+          "keys": ["win", "d"],
           "description": "Show desktop"
         },
-        "thumbs_up": {
+        "swipe_up": {
           "type": "hotkey",
-          "keys": [
-            "win",
-            "shift",
-            "s"
-          ],
-          "description": "Screenshot (Snip)"
+          "keys": ["win", "up"],
+          "description": "Maximize window"
+        },
+        "swipe_down": {
+          "type": "hotkey",
+          "keys": ["win", "down"],
+          "description": "Minimize window"
+        },
+        "call_me": {
+          "type": "hotkey",
+          "keys": ["alt", "f4"],
+          "description": "Close app"
         }
       }
     },
@@ -59,43 +59,38 @@
       "actions": {
         "swipe_left": {
           "type": "hotkey",
-          "keys": [
-            "alt",
-            "left"
-          ],
+          "keys": ["alt", "left"],
           "description": "Back"
         },
         "swipe_right": {
           "type": "hotkey",
-          "keys": [
-            "alt",
-            "right"
-          ],
+          "keys": ["alt", "right"],
           "description": "Forward"
         },
         "browser": {
           "type": "hotkey",
-          "keys": [
-            "ctrl",
-            "t"
-          ],
+          "keys": ["ctrl", "t"],
           "description": "New tab"
         },
         "fist_left": {
           "type": "hotkey",
-          "keys": [
-            "ctrl",
-            "w"
-          ],
+          "keys": ["ctrl", "w"],
           "description": "Close tab"
         },
-        "thumbs_up": {
+        "swipe_up": {
           "type": "hotkey",
-          "keys": [
-            "ctrl",
-            "d"
-          ],
-          "description": "Bookmark page"
+          "keys": ["ctrl", "shift", "t"],
+          "description": "Reopen tab"
+        },
+        "swipe_down": {
+          "type": "hotkey",
+          "keys": ["ctrl", "w"],
+          "description": "Close tab"
+        },
+        "call_me": {
+          "type": "hotkey",
+          "keys": ["ctrl", "l"],
+          "description": "Focus address bar"
         }
       }
     },
@@ -122,7 +117,17 @@
           "key": "volumemute",
           "description": "Mute"
         },
-        "thumbs_up": {
+        "swipe_up": {
+          "type": "key",
+          "key": "volumeup",
+          "description": "Volume up"
+        },
+        "swipe_down": {
+          "type": "key",
+          "key": "volumedown",
+          "description": "Volume down"
+        },
+        "call_me": {
           "type": "key",
           "key": "playpause",
           "description": "Play / Pause"
@@ -134,46 +139,38 @@
       "actions": {
         "swipe_left": {
           "type": "hotkey",
-          "keys": [
-            "ctrl",
-            "shift",
-            "tab"
-          ],
+          "keys": ["ctrl", "shift", "tab"],
           "description": "Prev file"
         },
         "swipe_right": {
           "type": "hotkey",
-          "keys": [
-            "ctrl",
-            "tab"
-          ],
+          "keys": ["ctrl", "tab"],
           "description": "Next file"
         },
         "browser": {
           "type": "hotkey",
-          "keys": [
-            "ctrl",
-            "shift",
-            "p"
-          ],
+          "keys": ["ctrl", "shift", "p"],
           "description": "Command palette"
         },
         "fist_left": {
           "type": "hotkey",
-          "keys": [
-            "ctrl",
-            "`"
-          ],
+          "keys": ["ctrl", "`"],
           "description": "Toggle terminal"
         },
-        "thumbs_up": {
+        "swipe_up": {
           "type": "hotkey",
-          "keys": [
-            "ctrl",
-            "shift",
-            "k"
-          ],
+          "keys": ["ctrl", "shift", "k"],
           "description": "Delete line"
+        },
+        "swipe_down": {
+          "type": "hotkey",
+          "keys": ["ctrl", "z"],
+          "description": "Undo"
+        },
+        "call_me": {
+          "type": "hotkey",
+          "keys": ["ctrl", "shift", "`"],
+          "description": "New terminal"
         }
       }
     }
@@ -186,15 +183,9 @@
     "swipe_cooldown_frames": 15
   },
   "mouse": {
-    "smoothing": 0.3,
-    "click_zone_x": [
-      0.25,
-      0.75
-    ],
-    "click_zone_y": [
-      0.25,
-      0.65
-    ]
+    "smoothing": 0.3, 
+    "click_zone_x": [0.25, 0.75],
+    "click_zone_y": [0.25, 0.65]                                                                           
   },
   "volume": {
     "smoothing": 0.15,
