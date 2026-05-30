@@ -1,4 +1,4 @@
-"""src/main.py — Entry point for Gesture Control Hub."""
+"""src/main.py — Точка входу для Gesture Control Hub."""
 import os
 import sys
 

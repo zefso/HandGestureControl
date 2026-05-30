@@ -1,4 +1,4 @@
-"""src/app.py — GestureControlApp and GestureActionExecutor."""
+"""src/app.py — GestureControlApp та GestureActionExecutor."""
 import cv2
 import torch
 import numpy as np
@@ -31,11 +31,11 @@ except ImportError as e:
 
 pyautogui.PAUSE    = 0
 
-# Exported for tests
+# Експортується для тестів
 SWIPE_GESTURES = ['swipe_left', 'swipe_right', 'swipe_up', 'swipe_down']
 APP_VERSION    = '2.1'
 
-# Available display resolutions shown in settings panel
+# Доступні роздільності для вікна відображення
 DISP_RESOLUTIONS = [
     ((640,  480),  '640 x 480',   'native / fastest'),
     ((1280, 720),  '1280 x 720',  'HD'),
@@ -44,21 +44,21 @@ DISP_RESOLUTIONS = [
 
 
 def _get_camera_labels() -> list[str]:
-    """Return camera names in DirectShow order (matches OpenCV CAP_DSHOW indices).
+    """Повертає назви камер у порядку DirectShow (відповідає індексам OpenCV CAP_DSHOW).
 
-    Tries three methods in order of accuracy:
-      1. pygrabber  — exact DirectShow enumeration (install with: pip install pygrabber)
-      2. comtypes   — same DirectShow API, no extra packages needed
-      3. WMI query  — physical cameras only, virtual cameras get 'Cam N'
+    Три методи за пріоритетом:
+      1. pygrabber  — точне перелічення DirectShow (pip install pygrabber)
+      2. comtypes   — той самий DirectShow API без додаткових пакетів
+      3. WMI-запит  — лише фізичні камери, віртуальні отримують 'Cam N'
     """
-    # ── 1. pygrabber (ideal) ──────────────────────────────────────────────────
+    # ── 1. pygrabber (ідеальний варіант) ─────────────────────────────────────
     try:
         from pygrabber.dshow_graph import FilterGraph
         return FilterGraph().get_input_devices()
     except Exception:
         pass
 
-    # ── 2. comtypes DirectShow enumeration ───────────────────────────────────
+    # ── 2. comtypes DirectShow перелічення ───────────────────────────────────
     try:
         import comtypes, comtypes.client, comtypes.automation
         from comtypes import GUID, IUnknown, HRESULT, POINTER
@@ -125,7 +125,7 @@ def _get_camera_labels() -> list[str]:
     except Exception:
         pass
 
-    # ── 3. WMI fallback (physical cameras only) ───────────────────────────────
+    # ── 3. WMI-запасний варіант (лише фізичні камери) ────────────────────────
     try:
         import win32com.client
         svc   = win32com.client.GetObject("winmgmts://./root/cimv2")
@@ -141,7 +141,7 @@ def _get_camera_labels() -> list[str]:
 
 
 def _ascii_cam_name(raw: str) -> str:
-    """Strip non-ASCII characters and collapse whitespace for OpenCV rendering."""
+    """Видаляє не-ASCII символи та зайві пробіли для коректного відображення OpenCV."""
     import re
     cleaned = re.sub(r'[^\x20-\x7E]+', ' ', raw)
     cleaned = re.sub(r'\s+', ' ', cleaned).strip()
@@ -149,7 +149,7 @@ def _ascii_cam_name(raw: str) -> str:
 
 
 def _detect_cameras(max_idx: int = 5) -> list[tuple[int, str]]:
-    """Return available cameras as (index, display_name) pairs."""
+    """Повертає доступні камери у вигляді пар (індекс, назва)."""
     labels = _get_camera_labels()
     found  = []
     for i in range(max_idx):
@@ -164,7 +164,7 @@ def _detect_cameras(max_idx: int = 5) -> list[tuple[int, str]]:
             pass
     return found or [(0, 'Cam 0')]
 
-# ── Auto-profile ───────────────────────────────────────────────────────────────
+# ── Авто-профіль ──────────────────────────────────────────────────────────────
 
 try:
     import win32gui
@@ -201,19 +201,19 @@ def _title_to_profile(title: str) -> str:
 
 
 
-# ── GestureControlApp ─────────────────────────────────────────────────────────
+# ── GestureControlApp ──────────────────────────────────────────────────────────
 
 class GestureControlApp:
     """
-    Main inference loop.
+    Головний цикл розпізнавання.
 
-    Modes:
-      GESTURES — LSTM gesture recognition → actions
-      MOUSE    — AirMouse controls cursor with right hand
-      VOLUME   — left fist held + right hand controls volume
+    Режими:
+      GESTURES — LSTM-розпізнавання жестів → дії
+      MOUSE    — AirMouse керує курсором правою рукою
+      VOLUME   — лівий кулак + права рука регулює гучність
 
-    Mode switch: ok (GESTURES→MOUSE) | stop (MOUSE→GESTURES)
-    Auto-profile: detects the active window every 60 frames.
+    Перемикання: ok (GESTURES→MOUSE) | stop (MOUSE→GESTURES)
+    Авто-профіль: визначає активне вікно кожні 60 кадрів.
     """
 
     PROFILES        = ['default', 'browser', 'media', 'vscode']
@@ -227,12 +227,12 @@ class GestureControlApp:
         self._cameras  = _detect_cameras()
         self._profile = 'default'
 
-        # Runtime state
+        # Стан під час роботи
         self._mode       = 'GESTURES'
         self._seq: list  = []
         self._cooldown      = 0
         self._swipe_cd      = 0
-        self._swipe_locked  = False   # require static between swipe fires
+        self._swipe_locked  = False   # блокує повторний свайп до повернення до static
         self._fist_cnt   = 0
         self._switch_cnt = 0
         self._last_act   = 'ready'
@@ -244,11 +244,11 @@ class GestureControlApp:
         self._confirm_buf = deque(maxlen=5)
         self._all_probs: np.ndarray | None = None
 
-        # Auto-profile
+        # Авто-профіль
         self._auto_profile     = True
         self._auto_cnt         = 0
 
-        # Components
+        # Компоненти
         config_path = os.path.join(os.path.dirname(__file__), 'gestures.json')
         self._executor = GestureActionExecutor(config_path)
         self._executor.set_profile(self._profile)
@@ -257,7 +257,7 @@ class GestureControlApp:
         self._volume   = VolumeController()
         self._model    = self._init_model()
 
-    # ── Init ──────────────────────────────────────────────────────────────────
+    # ── Ініціалізація ─────────────────────────────────────────────────────────
 
     def _init_model(self) -> GestureLSTM:
         if not os.path.exists(MODEL_PATH):
@@ -273,7 +273,7 @@ class GestureControlApp:
         print(f'[OK] Model loaded | {len(GESTURES)} gestures | auto-profile ON')
         return m
 
-    # ── Inference ─────────────────────────────────────────────────────────────
+    # ── Inference (передбачення) ──────────────────────────────────────────────
 
     def _predict(self, seq) -> tuple[str, float]:
         inp = torch.tensor(np.array([seq]), dtype=torch.float32).to(DEVICE)
@@ -285,7 +285,7 @@ class GestureControlApp:
         return gesture, conf
 
     def _predict_all(self, seq) -> tuple[str, float, np.ndarray]:
-        """Returns (gesture, confidence, all_probs) — used by TEST mode."""
+        """Повертає (жест, впевненість, all_probs) — використовується в TEST-режимі."""
         inp = torch.tensor(np.array([seq]), dtype=torch.float32).to(DEVICE)
         with torch.no_grad():
             raw    = self._model(inp)
@@ -295,7 +295,7 @@ class GestureControlApp:
         gesture = GESTURES[idx] if conf > THRESHOLD else 'static'
         return gesture, conf, all_p
 
-    # ── Hand processing ───────────────────────────────────────────────────────
+    # ── Обробка рук ───────────────────────────────────────────────────────────
 
     def _process_hands(self, results):
         right, left, left_fist = None, None, False
@@ -313,7 +313,7 @@ class GestureControlApp:
                     right = lms
         return right, left, left_fist
 
-    # ── FPS ───────────────────────────────────────────────────────────────────
+    # ── Підрахунок FPS ────────────────────────────────────────────────────────
 
     def _tick_fps(self) -> float:
         now        = time.time()
@@ -323,7 +323,7 @@ class GestureControlApp:
         self._fps  = 0.88 * self._fps + 0.12 * inst
         return self._fps
 
-    # ── Auto-profile ──────────────────────────────────────────────────────────
+    # ── Авто-профіль ──────────────────────────────────────────────────────────
 
     def _maybe_update_profile(self):
         if not self._auto_profile:
@@ -340,10 +340,10 @@ class GestureControlApp:
                 self._executor.set_profile(new)
                 self._hud.flash(f'Auto: {new.upper()}')
 
-    # ── Keyboard ──────────────────────────────────────────────────────────────
+    # ── Клавіатура ────────────────────────────────────────────────────────────
 
     def _handle_key(self, k: int) -> bool:
-        """Returns False to exit run()."""
+        """Повертає False для виходу з run()."""
         if k in (ord('q'), 27):
             return False
         if k == ord('h'):
@@ -371,7 +371,7 @@ class GestureControlApp:
                 self._hud.flash(f'Manual: {p.upper()}')
         return True
 
-    # ── Mouse callback ────────────────────────────────────────────────────────
+    # ── Callback миші ────────────────────────────────────────────────────────
 
     def _mouse_cb(self, ev, x, y, flags, *_):
         if ev == cv2.EVENT_LBUTTONDOWN:
@@ -379,13 +379,13 @@ class GestureControlApp:
         elif ev == cv2.EVENT_MOUSEWHEEL:
             self._hud.handle_scroll(40 if flags < 0 else -40)
 
-    # ── Gesture helpers ───────────────────────────────────────────────────────
+    # ── Допоміжні методи жестів ───────────────────────────────────────────────
 
     @staticmethod
     def _verify_gesture(gesture: str, right_lms, left_lms=None) -> bool:
         """
-        Geometric verification — second layer of defence after LSTM.
-        Left-hand gestures use left_lms; right-hand gestures use right_lms.
+        Геометрична верифікація — другий рівень захисту після LSTM.
+        Жести лівої руки використовують left_lms; правої — right_lms.
         """
         LEFT_GESTURES = ('fist_left', 'swipe_left')
         lms = left_lms if gesture in LEFT_GESTURES else right_lms
@@ -398,16 +398,16 @@ class GestureControlApp:
             return all(lm[tip].y > lm[tip - 2].y for tip in [8, 12, 16, 20])
 
         elif gesture == 'browser':
-            return (lm[8].y  < lm[6].y  and   # index up
-                    lm[12].y < lm[10].y and   # middle up
-                    lm[16].y > lm[14].y and   # ring down
-                    lm[20].y > lm[18].y)      # pinky down
+            return (lm[8].y  < lm[6].y  and   # вказівний вгору
+                    lm[12].y < lm[10].y and   # середній вгору
+                    lm[16].y > lm[14].y and   # безіменний вниз
+                    lm[20].y > lm[18].y)      # мізинець вниз
 
         return True
 
     def _run_gesture(self, detected: str, right_lms=None, left_lms=None):
         is_swipe = detected in SWIPE_GESTURES
-        # Swipes need cooldown AND must return to 'static' between fires
+        # Свайпи потребують cooldown І повернення до 'static' між спрацьовуваннями
         if is_swipe:
             can_fire = self._swipe_cd == 0 and not self._swipe_locked
         else:
@@ -421,12 +421,12 @@ class GestureControlApp:
             self._history.append(detected)
             if is_swipe:
                 self._swipe_cd     = SWIPE_COOLDOWN_FRAMES
-                self._swipe_locked = True   # block until static is confirmed
+                self._swipe_locked = True   # блокуємо до підтвердження static
             else:
                 self._cooldown = COOLDOWN_FRAMES
             print(f'>>> {detected.upper()} -> {desc}')
 
-    # ── Skeleton drawing ──────────────────────────────────────────────────────
+    # ── Малювання скелету рук ─────────────────────────────────────────────────
 
     def _draw_skeletons(self, frame, results, mp_h, mp_draw, mp_sty):
         if not results.multi_hand_landmarks:
@@ -439,19 +439,23 @@ class GestureControlApp:
                 mp_sty.get_default_hand_connections_style(),
             )
 
-    # ── Mouse mode rendering ──────────────────────────────────────────────────
+    # ── Режим миші: рух курсору, кліки, скрол ────────────────────────────────
 
-    def _run_mouse(self, frame, right, left=None):
+    def _run_mouse(self, frame, right, left=None, left_fist: bool = False):
         hp, wp = frame.shape[:2]
+        selection_mode = left_fist   # лівий кулак → режим виділення тексту
 
-        # ── Right hand: cursor + click ────────────────────────────────────────
+        # ── Права рука: курсор + кліки ────────────────────────────────────────
         if right:
             try:
-                self._mouse.move(right)
-                state = self._mouse.handle_actions(right)
+                self._mouse.move(right, selection_mode)
+                state = self._mouse.handle_actions(right, selection_mode)
                 ix = int(right.landmark[8].x * wp)
                 iy = int(right.landmark[8].y * hp)
-                if state == 'L_DOWN':
+                if state == 'SELECT':
+                    cv2.circle(frame, (ix, iy), 20, C['yellow'], -1)
+                    cv2.circle(frame, (ix, iy), 22, C['white'],  2)
+                elif state == 'L_DOWN':
                     cv2.circle(frame, (ix, iy), 20, C['green'], -1)
                     cv2.circle(frame, (ix, iy), 22, C['white'],  2)
                 elif state == 'RIGHT_CLICK':
@@ -462,9 +466,11 @@ class GestureControlApp:
             except Exception as e:
                 print(f'[Mouse-R] {e}')
 
-        # ── Left hand: position-based scroll ─────────────────────────────────
+        # ── Ліва рука: позиційний скролінг ────────────────────────────────────
         try:
-            scroll_state, intensity = self._mouse.handle_left_scroll(left if left else None)
+            scroll_state, intensity = self._mouse.handle_left_scroll(
+                left if (left and not left_fist) else None
+            )
         except Exception as e:
             print(f'[Mouse-L] {e}')
             scroll_state, intensity = 'IDLE', 0.0
@@ -473,7 +479,7 @@ class GestureControlApp:
             ix  = int(left.landmark[8].x * wp)
             iy  = int(left.landmark[8].y * hp)
             col = C['green'] if scroll_state == 'SCROLL_UP' else C['orange']
-            # Speed bar: vertical strip on left edge
+            # Смуга швидкості: вертикальна смуга на лівому краю
             bar_h  = int(hp * 0.4)
             bar_x  = 28
             bar_y  = (hp - bar_h) // 2
@@ -496,7 +502,7 @@ class GestureControlApp:
     def _hud_draw(self, frame, *, fps, confirmed='static', conf=0.0,
                   switching=False, paused=False, vol=None,
                   DISP_W=1280, DISP_H=720):
-        """Convenience wrapper — forwards all HUD.draw() params in one place."""
+        """Зручна обгортка — передає всі параметри HUD.draw() в одному місці."""
         self._hud.draw(
             frame,
             mode=self._mode, profile=self._profile,
@@ -548,7 +554,7 @@ class GestureControlApp:
                         cv2.destroyAllWindows()
                         return
                     
-                    # Track window resize
+                    # Відстежуємо зміну розміру вікна
                     try:
                         rect = cv2.getWindowImageRect('Gesture Control Hub')
                         if rect is not None and rect[2] > 0 and rect[3] > 0:
@@ -576,7 +582,7 @@ class GestureControlApp:
 
                     self._maybe_update_profile()
 
-                    # Apply settings changes from HUD
+                    # Застосовуємо зміни налаштувань з HUD
                     if self._hud.selected_cam is not None:
                         new_cam = self._hud.selected_cam
                         self._hud.selected_cam = None
@@ -592,7 +598,7 @@ class GestureControlApp:
                         cv2.resizeWindow('Gesture Control Hub', DISP_W, DISP_H)
                         self._hud.flash(f'{DISP_W}x{DISP_H}')
 
-                    # ── Pause ─────────────────────────────────────────────
+                    # ── Пауза ─────────────────────────────────────────────
                     if self._paused:
                         self._hud_draw(frame, fps=fps, paused=True,
                                        DISP_W=DISP_W, DISP_H=DISP_H)
@@ -608,8 +614,8 @@ class GestureControlApp:
                     conf      = 0.0
                     switching = False
 
-                    # ── VOLUME mode ───────────────────────────────────────
-                    if left_fist:
+                    # ── Режим гучності (лише в GESTURES) ─────────────────
+                    if left_fist and self._mode != 'MOUSE':
                         self._fist_cnt += 1
                         if self._fist_cnt >= 7 and right:
                             vol = self._volume.apply(right)
@@ -622,7 +628,7 @@ class GestureControlApp:
                     else:
                         self._fist_cnt = 0
 
-                    # ── Prediction ────────────────────────────────────────
+                    # ── Передбачення жесту ────────────────────────────────
                     self._all_probs = None
                     if results.multi_hand_landmarks:
                         kp = extract_keypoints(results)
@@ -639,11 +645,11 @@ class GestureControlApp:
                                  if self._confirm_buf.count(detected) >= 3
                                  else 'static')
 
-                    # Unlock swipe once hand returns to static
+                    # Розблокуємо свайп коли рука повернулась до static
                     if confirmed == 'static':
                         self._swipe_locked = False
 
-                    # ── Mode switch ───────────────────────────────────────
+                    # ── Перемикання режиму ────────────────────────────────
                     trigger = 'ok'    if self._mode == 'GESTURES' else 'stop'
                     target  = 'MOUSE' if self._mode == 'GESTURES' else 'GESTURES'
                     if confirmed == trigger:
@@ -660,21 +666,21 @@ class GestureControlApp:
                     else:
                         self._switch_cnt = max(0, self._switch_cnt - 1)
 
-                    # ── MOUSE mode ────────────────────────────────────────
+                    # ── Режим MOUSE ───────────────────────────────────────
                     if self._mode == 'MOUSE' and not switching:
-                        self._run_mouse(frame, right, left)
+                        self._run_mouse(frame, right, left, left_fist)
                         self._last_act = 'MOUSE ACTIVE'
 
-                    # ── GESTURES mode ─────────────────────────────────────
+                    # ── Режим GESTURES ────────────────────────────────────
                     elif self._mode == 'GESTURES' and not switching:
                         if not self._test_mode:
                             self._run_gesture(confirmed, right, left)
 
-                    # ── Cooldowns ─────────────────────────────────────────
+                    # ── Кулдауни ──────────────────────────────────────────
                     if self._cooldown > 0: self._cooldown -= 1
                     if self._swipe_cd  > 0: self._swipe_cd  -= 1
 
-                    # ── Render ────────────────────────────────────────────
+                    # ── Відображення ──────────────────────────────────────
                     self._draw_skeletons(frame, results, mp_h, mp_draw, mp_sty)
                     self._hud_draw(frame, fps=fps, confirmed=confirmed, conf=conf,
                                    switching=switching, DISP_W=DISP_W, DISP_H=DISP_H)

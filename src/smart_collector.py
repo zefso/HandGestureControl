@@ -34,10 +34,10 @@ from src.config import GESTURES, SEQ_LENGTH, DATA_PATH, USE_DELTA, INPUT_SIZE
 
 MAX_LOST_RATIO = 0.10       # максимум 10% кадрів без руки
 
-# Gestures where ONE hand (right) is expected. Two hands - warning.
+# Жести де очікується ОДНА рука (права). Дві руки — попередження.
 SINGLE_HAND_GESTURES = {'swipe_left', 'swipe_right', 'ok', 'stop', 'browser'}
 
-# Variability hints - cyclically before each series
+# Підказки варіативності — циклічно перед кожною серією
 VARIABILITY_HINTS = [
     "Normal distance from camera",
     "Get CLOSER to the camera",
@@ -51,7 +51,7 @@ VARIABILITY_HINTS = [
     "Change lighting angle (tilt head)",
 ]
 
-# UI colors (BGR)
+# Кольори UI (BGR)
 CLR_OK     = (0, 210, 80)
 CLR_WARN   = (0, 180, 255)
 CLR_ERR    = (0, 60, 220)
@@ -65,14 +65,14 @@ mp_drawing = mp.solutions.drawing_utils
 
 
 # ---------------------------------------------------------------------------
-# Dataset consistency check
+# Перевірка сумісності датасету
 # ---------------------------------------------------------------------------
 
 def check_dataset_consistency() -> bool:
     """
-    Checks the size of existing .npy files.
-    If size does not match INPUT_SIZE - warns and returns False.
-    Returns True if everything is ok or dataset is empty.
+    Перевіряє розмір існуючих .npy файлів.
+    Якщо розмір не відповідає INPUT_SIZE — попереджає та повертає False.
+    Повертає True якщо все гаразд або датасет порожній.
     """
     mismatch_found = False
     for gesture in GESTURES:
@@ -97,7 +97,7 @@ def check_dataset_consistency() -> bool:
     return True
 
 # ---------------------------------------------------------------------------
-# Clean dataset
+# Очищення датасету
 # ---------------------------------------------------------------------------
 
 def clean_dataset() -> None:
@@ -185,7 +185,7 @@ def draw_two_hands_warning(frame) -> None:
 
 
 def _show_rejection_screen(cap, message: str) -> None:
-    deadline = time.time() + 1.0  # show for 1 second
+    deadline = time.time() + 1.0  # показувати 1 секунду
     while time.time() < deadline:
         ret, frame = cap.read()
         if not ret:
@@ -232,7 +232,7 @@ def record_sequence(cap, hands, gesture: str, seq_idx: int, max_count: int) -> b
             cv2.imshow('Smart Collector', frame)
             cv2.waitKey(1)
 
-    # --- Recording ---
+    # --- Запис ---
     frame_count = 0
     while frame_count < SEQ_LENGTH:
         ret, frame = cap.read()
@@ -242,18 +242,18 @@ def record_sequence(cap, hands, gesture: str, seq_idx: int, max_count: int) -> b
         frame = cv2.flip(frame, 1)
         results = hands.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
 
-        # Warning for two hands
+        # Попередження про дві руки під час запису
         if (results.multi_hand_landmarks
                 and len(results.multi_hand_landmarks) > 1
                 and is_single_hand):
             draw_two_hands_warning(frame)
 
-        # Skeleton
+        # Скелет руки
         if results.multi_hand_landmarks:
             for hlms in results.multi_hand_landmarks:
                 mp_drawing.draw_landmarks(frame, hlms, mp_hands.HAND_CONNECTIONS)
 
-        # Quality
+        # Якість: рахуємо кадри без руки
         if not results.multi_hand_landmarks:
             lost_frames += 1
 
@@ -261,7 +261,7 @@ def record_sequence(cap, hands, gesture: str, seq_idx: int, max_count: int) -> b
         frames_data.append(keypoints)
         frame_count += 1
 
-        # UI
+        # Відображення UI
         draw_top_bar(frame, gesture, seq_idx, count_recorded(gesture, max_count), max_count)
         draw_hint(frame, hint, seq_idx)
 
@@ -282,7 +282,7 @@ def record_sequence(cap, hands, gesture: str, seq_idx: int, max_count: int) -> b
         cv2.imshow('Smart Collector', frame)
         cv2.waitKey(1)
 
-    # --- Quality check ---
+    # --- Перевірка якості ---
     lost_ratio = lost_frames / SEQ_LENGTH
     if lost_ratio > MAX_LOST_RATIO:
         msg = f"REJECTED — {int(lost_ratio * 100)}% frames without hand (max {int(MAX_LOST_RATIO * 100)}%)"
@@ -290,7 +290,7 @@ def record_sequence(cap, hands, gesture: str, seq_idx: int, max_count: int) -> b
         _show_rejection_screen(cap, msg)
         return False
 
-    # --- Save ---
+    # --- Збереження ---
     save_path = os.path.join(DATA_PATH, gesture, str(seq_idx))
     os.makedirs(save_path, exist_ok=True)
     for i, kp in enumerate(frames_data):

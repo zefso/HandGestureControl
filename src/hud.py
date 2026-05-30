@@ -1,4 +1,4 @@
-"""src/hud.py — HUD, settings panel, and draw helpers (Modernist Redesign)."""
+"""src/hud.py — HUD, панель налаштувань та допоміжні функції малювання."""
 import cv2
 import numpy as np
 import time
@@ -7,7 +7,7 @@ from src.config import (
     GESTURES, THRESHOLD, COOLDOWN_FRAMES, SWITCH_FRAMES,
 )
 
-# ── Color palette (Modernist) ────────────────────────────────────────────────
+# ── Кольорова палітра ────────────────────────────────────────────────────────
 C: dict[str, tuple] = {
     'bg':      (15,  15,  18),
     'panel':   (32,  32,  35),
@@ -54,7 +54,7 @@ SHORTCUTS = [
     ('S',       'Open / close this panel'),
 ]
 
-# ── Draw helpers ───────────────────────────────────────────────────────────────
+# ── Допоміжні функції малювання ───────────────────────────────────────────────
 
 def _rr_fill(img, x1, y1, x2, y2, color, r: int):
     r = max(0, min(r, (x2 - x1) // 2, (y2 - y1) // 2))
@@ -70,7 +70,7 @@ def _rr_fill(img, x1, y1, x2, y2, color, r: int):
     cv2.line(img, (x2, y1 + r), (x2, y2 - r), color, 1, cv2.LINE_AA)
 
 def rr(img, x1, y1, x2, y2, color, r: int = 10, alpha: float = 1.0, shadow: bool = False):
-    """Rounded rectangle with optional transparency and shadow."""
+    """Прямокутник із заокругленими кутами, опціональна прозорість і тінь."""
     if shadow:
         so = 3
         ov_sh = img.copy()
@@ -86,14 +86,14 @@ def rr(img, x1, y1, x2, y2, color, r: int = 10, alpha: float = 1.0, shadow: bool
 def txt(img, text: str, pos: tuple, scale: float = 0.52,
         color=None, bold: bool = False, anchor: str = 'left'):
     color  = color or C['white']
-    weight = 1  # Force non-bold for readability
+    weight = 1  # завжди тонкий шрифт — жирний погіршує читабельність
     if anchor != 'left':
         (tw, th), _ = cv2.getTextSize(text, _FONT, scale, weight)
         if anchor == 'center':
             pos = (pos[0] - tw // 2, pos[1] + th // 2)
         else:
             pos = (pos[0] - tw, pos[1])
-    # Very subtle text shadow
+    # Ледь помітна тінь тексту для контрасту
     cv2.putText(img, text, (pos[0]+1, pos[1]+1), _FONT, scale, (10,10,10), weight, cv2.LINE_AA)
     cv2.putText(img, text, pos, _FONT, scale, color, weight, cv2.LINE_AA)
 
@@ -113,7 +113,7 @@ def draw_gear(img, cx: int, cy: int,
     cv2.circle(img, (cx, cy), max(1, r_in - 2), C['bg'], -1)
     cv2.circle(img, (cx, cy), max(1, r_in - 2), color, 1, cv2.LINE_AA)
 
-# ── HUD ───────────────────────────────────────────────────────────────────────
+# ── Клас HUD ──────────────────────────────────────────────────────────────────
 
 class HUD:
     SETTINGS_PW = 360
@@ -191,7 +191,7 @@ class HUD:
         h, w = frame.shape[:2]
         mc   = MODE_COLORS.get(mode, C['accent'])
 
-        # Floating elements layout
+        # Розміщення плаваючих елементів
         self._draw_top_pills(frame, w, h, mode, mc, profile, gesture,
                              confidence, fps, test_mode, auto_profile)
         self._draw_bottom_pills(frame, w, h, last_action, history)
@@ -215,17 +215,17 @@ class HUD:
     def _draw_top_pills(self, f, w, h, mode, mc, profile, gesture,
                         confidence, fps, test_mode, auto_profile):
         pad = 20
-        # Mode Badge
+        # Бейдж режиму
         badge = f' {mode} '
         bw, bh = tsize(badge, 0.45, bold=True)
         rr(f, pad, pad, pad + bw + 24, pad + 38, C['panel'], r=19, alpha=0.85, shadow=True)
-        # Colored dot
+        # Кольорова точка режиму
         cv2.circle(f, (pad + 16, pad + 19), 5, mc, -1)
         txt(f, badge, (pad + 24, pad + 25), scale=0.45, color=C['white'], bold=True)
 
         x_cur = pad + bw + 34
 
-        # Action / Gesture
+        # Назва активного жесту
         if gesture not in ('static', '') and confidence > 0.5:
             gname = gesture.replace('_', ' ').upper()
             gw, gh = tsize(gname, 0.45, bold=True)
@@ -233,31 +233,31 @@ class HUD:
             txt(f, gname, (x_cur + 12, pad + 25), scale=0.45, color=mc, bold=True)
             x_cur += gw + 34
 
-        # Profile
+        # Профіль
         ptw, _ = tsize(profile.upper(), 0.42, bold=True)
         rr(f, x_cur, pad, x_cur + ptw + 24, pad + 38, C['panel'], r=19, alpha=0.85, shadow=True)
         txt(f, profile.upper(), (x_cur + 12, pad + 25), scale=0.42, color=C['white'], bold=True)
 
-        # Right side: Settings & FPS
+        # Права сторона: шестерня та FPS
         fps_str = f'{fps:.0f}'
         fw, _ = tsize(fps_str, 0.45, bold=True)
         gear_size = 38
         rx = w - pad - gear_size
         
-        # Gear Button
+        # Кнопка-шестерня (налаштування)
         gcol = C['accent'] if self.settings_open else C['panel']
         rr(f, rx, pad, rx + gear_size, pad + gear_size, gcol, r=19, alpha=0.85, shadow=True)
         draw_gear(f, rx + 19, pad + 19, color=C['bg'] if self.settings_open else C['white'])
         self._gear_rect = (rx, pad, rx + gear_size, pad + gear_size)
 
         rx -= (fw + 30)
-        # FPS Pill
+        # Таблетка FPS
         fps_col = C['green'] if fps >= 25 else C['orange'] if fps >= 15 else C['red']
         rr(f, rx, pad, rx + fw + 20, pad + 38, C['panel'], r=19, alpha=0.85, shadow=True)
         cv2.circle(f, (rx + 12, pad + 19), 4, fps_col, -1)
         txt(f, fps_str, (rx + 22, pad + 25), scale=0.45, color=C['white'], bold=True)
         
-        # TEST mode pill
+        # Таблетка TEST-режиму
         if test_mode:
             tw, _ = tsize('TEST', 0.45, bold=True)
             rx -= (tw + 30)
@@ -266,13 +266,13 @@ class HUD:
 
     def _draw_bottom_pills(self, f, w, h, last_action, history):
         pad = 20
-        # Bottom Left: Last Action
+        # Знизу зліва: остання дія
         aw, _ = tsize(last_action, 0.48)
         rr(f, pad, h - pad - 42, pad + aw + 40, h - pad, C['panel'], r=21, alpha=0.85, shadow=True)
         cv2.putText(f, '>', (pad + 16, h - pad - 14), _FONT, 0.48, C['accent'], 2, cv2.LINE_AA)
         txt(f, last_action, (pad + 34, h - pad - 15), scale=0.48, color=C['white'])
 
-        # Bottom Right: History (Chips)
+        # Знизу справа: історія жестів (чіпи)
         chips = list(history)[-4:]
         cx = w - pad - 24 # leave space for confidence strip
         for g in reversed(chips):
@@ -291,7 +291,7 @@ class HUD:
         sx = w - pad - 6
         sy = pad + 45
         
-        # Background track
+        # Доріжка (фон)
         rr(f, sx, sy, sx + 6, sy + strip_h, C['panel'], r=3, alpha=0.6)
         
         col  = C['green'] if confidence >= THRESHOLD else C['orange'] if confidence >= 0.6 else C['gray']
@@ -299,11 +299,11 @@ class HUD:
         if fill > 0:
             rr(f, sx, sy + strip_h - fill, sx + 6, sy + strip_h, col, r=3, alpha=0.9)
 
-        # Threshold tick
+        # Відмітка порогу впевненості
         ty = sy + strip_h - int(THRESHOLD * strip_h)
         cv2.line(f, (sx - 2, ty), (sx + 8, ty), C['white'], 2)
 
-        # Cooldown overly
+        # Накладка кулдауну
         if cooldown > 0:
             cd_h = int((cooldown / COOLDOWN_FRAMES) * strip_h)
             rr(f, sx, sy, sx + 6, sy + cd_h, C['orange'], r=3, alpha=0.9)
@@ -322,9 +322,9 @@ class HUD:
         rr(f, cx - BAR // 2 - 25, cy - 50, cx + BAR // 2 + 25, cy + 30, C['panel'], r=18, alpha=0.9, shadow=True)
         txt(f, f'Switching to {target}', (cx, cy - 15), scale=0.55, color=C['white'], bold=True, anchor='center')
         
-        # Track
+        # Доріжка прогресу перемикання
         rr(f, cx - BAR // 2, cy + 8, cx + BAR // 2, cy + 14, C['dark'], r=3)
-        # Fill
+        # Заповнення
         if prog > 0:
             rr(f, cx - BAR // 2, cy + 8, cx - BAR // 2 + int(prog * BAR), cy + 14, mc, r=3)
 
@@ -394,18 +394,18 @@ class HUD:
         px  = w - PW
         HDR = 75
         
-        # Dim background
+        # Затемнення фону за панеллю
         ov = f.copy()
         cv2.rectangle(ov, (0, 0), (px, h), C['bg'], -1)
         cv2.addWeighted(ov, 0.4, f, 0.6, 0, f)
 
-        # Panel
+        # Панель налаштувань
         cv2.rectangle(f, (px, 0), (w, h), C['panel'], -1)
         cv2.line(f, (px, 0), (px, h), C['border'], 1)
 
-        # Header
+        # Заголовок панелі
         txt(f, 'SETTINGS', (px + 30, 48), scale=0.6, color=C['white'], bold=True)
-        # Close button
+        # Кнопка закриття
         xb_x1, xb_y1, xb_x2, xb_y2 = w - 50, 25, w - 20, 55
         rr(f, xb_x1, xb_y1, xb_x2, xb_y2, C['dark'], r=15)
         mx, my = (xb_x1 + xb_x2) // 2, (xb_y1 + xb_y2) // 2
@@ -427,7 +427,7 @@ class HUD:
                 txt(roi, title, (MP, y + 20), scale=0.45, color=C['accent'], bold=True)
             y += 35
 
-        # CAMERAS
+        # КАМЕРИ
         sec('Camera')
         row_w = PW - 2 * MP
         for cam_idx, cam_label in self._cameras:
@@ -443,7 +443,7 @@ class HUD:
             y += 48
         y += 10
 
-        # RESOLUTION
+        # РОЗДІЛЬНІСТЬ
         sec('Resolution')
         for i, (res, lbl, hint) in enumerate(self._resolutions):
             selected = res == cur_res
@@ -462,7 +462,7 @@ class HUD:
             y += 70
         y += 10
 
-        # GESTURES
+        # ГАЙД ПО ЖЕСТАХ
         sec('Gesture Guide')
         for gname, hand, desc in GESTURE_GUIDE:
             y1, y2 = y, y + 50
@@ -475,7 +475,7 @@ class HUD:
             y += 55
         y += 10
 
-        # SCROLLBAR
+        # СМУГА ПРОКРУТКИ
         total_virtual = y + self._scroll
         self._scroll_max = max(0, total_virtual - content_h + 20)
         if self._scroll_max > 0:

@@ -95,9 +95,9 @@ class TestVolumeController:
         assert result == self.vc._last_vol
 
     def test_smoothing_applied(self):
-        """At mid-range distance smoothing should produce a value between 0 and 100."""
+        """При середній відстані згладжування має давати значення між 0 і 100."""
         self.vc._last_vol = 0
-        # distance ≈0.12 → interp≈0.12/0.18*100≈67% — well inside snap thresholds
+        # distance ≈0.12 → interp≈0.12/0.18*100≈67% — добре всередині зони snap
         hand = make_hand_landmarks({4: (0.38, 0.5), 8: (0.5, 0.5)})
         result = self.vc.calculate_level(hand)
         assert 0 < result < 100
@@ -266,13 +266,14 @@ class TestAirMouse:
 
     @patch('pyautogui.moveTo')
     def test_move_calls_moveto(self, mock_move):
-        hand = self._make_hand(idx_x=0.5, idx_y=0.45)
+        # thumb далеко від index (dist > _CLICK_FREEZE_DIST=0.07) → freeze не спрацьовує
+        hand = self._make_hand(idx_x=0.5, idx_y=0.45, thumb_x=0.1, thumb_y=0.9)
         self.mouse.move(hand)
         mock_move.assert_called_once()
 
     @patch('pyautogui.moveTo')
     def test_move_interpolates_to_screen(self, mock_move):
-        hand = self._make_hand(idx_x=0.5, idx_y=0.45)
+        hand = self._make_hand(idx_x=0.5, idx_y=0.45, thumb_x=0.1, thumb_y=0.9)
         self.mouse.move(hand)
         args = mock_move.call_args[0]
         assert 800 < args[0] < 1100  
@@ -308,26 +309,34 @@ class TestAirMouse:
 
     @patch('pyautogui.scroll')
     def test_scroll_up(self, mock_scroll):
-        hand = self._make_hand(idx_x=0.5, idx_y=0.40, mid_x=0.52, mid_y=0.40,
-                               thumb_x=0.1, thumb_y=0.9)
-        self.mouse.handle_actions(hand)
-        
-        hand2 = self._make_hand(idx_x=0.5, idx_y=0.30, mid_x=0.52, mid_y=0.30,
-                                thumb_x=0.1, thumb_y=0.9)
-        result = self.mouse.handle_actions(hand2)
-        assert result == "SCROLLING"
+        """handle_left_scroll: index well above centre (y=0.15) → SCROLL_UP + scroll() called."""
+        # index (lm[8]) вище pip (lm[6]) → палець витягнутий (index.y < pip.y)
+        # offset = 0.15 - 0.5 = -0.35 → за межами dead-zone 0.12 → SCROLL_UP
+        positions = {
+            6:  (0.5, 0.30),   # pip — нижче за fingertip
+            8:  (0.5, 0.15),   # index fingertip — далеко вище центра
+        }
+        hand = make_hand_landmarks(positions)
+        # Скидаємо rate-limiter, щоб scroll точно спрацював
+        self.mouse._ls_last_t = 0.0
+        state, intensity = self.mouse.handle_left_scroll(hand)
+        assert state == 'SCROLL_UP'
         mock_scroll.assert_called_once()
-        assert mock_scroll.call_args[0][0] > 0  
+        assert mock_scroll.call_args[0][0] > 0
 
     @patch('pyautogui.scroll')
     def test_scroll_resets_on_idle(self, mock_scroll):
-        hand_scroll = self._make_hand(idx_x=0.5, idx_y=0.40, mid_x=0.52, mid_y=0.40,
-                                      thumb_x=0.1, thumb_y=0.9)
-        self.mouse.handle_actions(hand_scroll)
-        hand_idle = self._make_hand(idx_x=0.5, idx_y=0.60, mid_x=0.7, mid_y=0.60,
-                                    thumb_x=0.1, thumb_y=0.9)
-        self.mouse.handle_actions(hand_idle)
-        assert self.mouse._prev_scroll_y is None
+        """handle_left_scroll: коли палець не витягнутий → IDLE, rate-limiter скинуто."""
+        # index.y >= pip.y → палець зігнутий → IDLE
+        positions = {
+            6:  (0.5, 0.40),   # pip
+            8:  (0.5, 0.60),   # index нижче pip → не витягнутий
+        }
+        hand_idle = make_hand_landmarks(positions)
+        state, intensity = self.mouse.handle_left_scroll(hand_idle)
+        assert state == 'IDLE'
+        assert intensity == 0.0
+        assert self.mouse._ls_last_t == 0.0
 
     # --- idle ---
 
